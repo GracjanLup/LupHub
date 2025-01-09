@@ -7,7 +7,7 @@ import subprocess
 import requests
 import logging
 
-# Ustawienie logowania błędów test
+# Ustawienie logowania błędów
 logging.basicConfig(level=logging.ERROR)
 
 app = FastAPI()
