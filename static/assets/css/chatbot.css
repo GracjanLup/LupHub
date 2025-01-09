@@ -1,0 +1,135 @@
+#chat-container {
+    width: 100%;
+    max-width: 1300px;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    background-color: #fff;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#chat-window {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background-color: #f9f9f9;
+    border-bottom: 1px solid #ccc;
+    display: flex;
+    flex-direction: column; /* Wiadomości w kolumnie */
+    gap: 8px; /* Odstęp między wiadomościami */
+    max-height: 600px; /* Maksymalna wysokość okna wiadomości */
+    scroll-behavior: smooth; /* Płynne przewijanie */
+}
+
+.message {
+    display: inline-block; /* Dopasowanie szerokości do treści */
+    padding: 12px;
+    border-radius: 12px;
+    max-width: 75%; /* Maksymalna szerokość wiadomości */
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.message.user {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    align-self: flex-end; /* Wyrównanie wiadomości użytkownika do prawej */
+    text-align: right;
+}
+
+.message.bot {
+    background-color: #f8d7da;
+    color: #721c24;
+    align-self: flex-start; /* Wyrównanie wiadomości bota do lewej */
+    text-align: left;
+}
+
+#input-area {
+    display: flex;
+    flex-direction: column; /* Ustawienie układu pionowego */
+    gap: 8px; /* Odstęp między elementami */
+    padding: 8px;
+    background-color: #f9f9f9;
+}
+
+#input-container {
+    display: flex; /* Pole tekstowe i przycisk w jednym wierszu */
+    gap: 8px;
+}
+
+#user-input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    outline: none;
+}
+
+#send-button {
+    margin-left: 8px;
+    padding: 8px 16px;
+    border: none;
+    background-color: #5993d1;
+    color: white;
+    border-radius: 12px;
+    cursor: pointer;
+    outline: none;
+    display: flex; /* Ustawienie flexboxa */
+    justify-content: center; /* Wyśrodkowanie poziome */
+    align-items: center; /* Wyśrodkowanie pionowe */
+    text-align: center; /* Dodatkowe wyrównanie tekstu */
+}
+
+#send-button:hover {
+    background-color: #0056b3;
+}
+
+#send-button:active {
+    background-color: #003f7f;
+}
+
+.subtitle {
+    font-size: 0.6em; /* Mniejszy rozmiar czcionki */
+    text-transform: none; /* Ustaw normalne litery, zamiast wielkich */
+    color: #757575; /* Opcjonalnie, inny kolor dla lepszej czytelności */
+}
+
+.subtitle2 {
+    font-size: 0.3em; /* Mniejszy rozmiar czcionki */
+    text-transform: none; /* Ustaw normalne litery, zamiast wielkich */
+    color: #757575; /* Opcjonalnie, inny kolor dla lepszej czytelności */
+}
+
+#example-prompts {
+    display: flex;
+    justify-content: center; /* Wyśrodkowanie przycisków */
+    gap: 20px; /* Odstęp między przyciskami */
+    margin-bottom: 8px; /* Odstęp od pola input */
+}
+
+.example-button {
+    padding: 15px 20px;
+    border: none;
+    background-color: #e1e1e1;
+    color: #333;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex; /* Ustawienie flexboxa */
+    justify-content: center; /* Wyśrodkowanie poziome */
+    align-items: center; /* Wyśrodkowanie pionowe */
+    text-align: center; /* Ustawienie wyrównania tekstu */
+    text-transform: none;
+}
+S
+.example-button:hover {
+    background-color: #d0d0d0;
+}
+
+.example-button:active {
+    background-color: #b0b0b0;
+}
