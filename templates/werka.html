@@ -6,7 +6,7 @@
 -->
 <html>
 	<head>
-		<title>Author - LupHub</title>
+		<title>Surprise</title>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
 		<link rel="stylesheet" href="/static/assets/css/main.css" />
@@ -65,49 +65,34 @@
 							</style>
 							<section class="intro">
 								<header class="major">
-									<h1></br>author Reference</h1>
-									
+									<h1></br>co to będzie... 😮</h1>
 								</header>
-								<a>
-									<img src="/static/images/GFace.jpg" alt="" />
-								</a>
-								<p>
-									The creator of this website is <strong>Gracjan Popiółkowski</strong>, who built it using the FastAPI framework. It
-									is hosted on an AWS EC2 server and deployed under his personal domain. He customized the "Massively" HTML/CSS
-									template to suit his vision and requirements.
-								</p>
-								<p>
-									Gracjan is a deeply curious individual with a strong focus on artificial intelligence. His interests extend to
-									neurobiology, biomedical engineering, data science, and various branches of psychology, including cognitive psychology, emotions and motivation, psychopathology, developmental psychology.
-								</p>
-								<p>
-									Gracjan is honing his skills in practical AI applications while working at the Polish company <strong>Wano
-										Solutions</strong>. His role includes a wide range of responsibilities, such as:
-								</p>
-								<ul>
-									<li>Developing and implementing a consultant chatbot</li>
-									<li>Conducting Power BI analysis</li>
-									<li>Improving website user experience (UX) through analysis</li>
-									<li>Creating automated newsletters</li>
-									<li>Training employees to leverage AI tools for greater efficiency and workflow automation</li>
-								</ul>
-								<p>
-									Gracjan's multifaceted personality is further illustrated by his diverse interests outside of his professional and
-									academic life:
-								</p>
-								<ul>
-									<li>
-										<strong>Vipassana Meditation:</strong> Gracjan embraces Vipassana as a life philosophy, inspired by Siddhartha
-										Gautama’s teachings. He practices meditation to release harmful desires and cultivate mindfulness, allowing for
-										focus and clarity of mind.
-									</li>
-									<li>
-										<strong>Martial Arts:</strong> Gracjan is a green belt in Krav Maga and has also practiced Judo and MMA.
-										Currently, he is passionate about Brazilian Jiu-Jitsu, which he values for its role in maintaining physical
-										fitness, building mental resilience, and fostering humility.
-									</li>
-								</ul>
-
+								<button id="toggleButton" style="
+										font-size: 2em !important;
+										line-height: 1 !important;
+										padding: 5px 30px !important;
+										display: block !important;
+										margin: 10px auto 0 auto !important;
+										border: 3px solid #222 !important;
+										background-color: #ffffff !important;
+										color: #222 !important;
+										border-radius: 12px !important;
+										cursor: pointer !important;
+										font-weight: 700 !important;
+										box-shadow: none !important;
+										text-transform: none !important;
+										letter-spacing: 0px !important;
+										font-family: 'Arial', sans-serif !important;
+									" onmouseover="this.style.backgroundColor='#f7f7f7';" onmouseout="this.style.backgroundColor='#ffffff';">
+									Kliknij mnie!!!
+								</button>
+								
+									<div id="surpriseContainer" style="display: none; text-align: center; margin-top: 20px;">
+										<p id="surpriseText" style="font-size: 1.2em; text-align: center;">Wróć tu we wtorek o 20:00 😈</p>
+										<p id="countdown" style="font-size: 2em; font-weight: bold; text-align: center; margin-top: 10px;"></p>
+										<img id="giftImage" src="/static/images/giftclose.png" alt="gift" style="margin-top: 20px; width: 200px;" />
+										<div id="finalMessage" style="margin-top: 20px;"></div>			
+									</div>
 							</section>
 
 							
@@ -133,5 +118,65 @@
 			<script src="/static/assets/js/breakpoints.min.js"></script>
 			<script src="/static/assets/js/util.js"></script>
 			<script src="/static/assets/js/main.js"></script>
+			<script>
+				document.addEventListener("DOMContentLoaded", function () {
+					const toggleButton = document.getElementById("toggleButton");
+					const container = document.getElementById("surpriseContainer");
+					const surpriseText = document.getElementById("surpriseText");
+					const countdown = document.getElementById("countdown");
+					const giftImage = document.getElementById("giftImage");
+					const finalMessage = document.getElementById("finalMessage");
+
+					let isVisible = false;
+
+					toggleButton.addEventListener("click", () => {
+						isVisible = !isVisible;
+						container.style.display = isVisible ? "block" : "none";
+						toggleButton.innerText = isVisible ? "Hide" : "Kliknij mnie!!!";
+					});
+
+					// Time setup
+					const targetDate = new Date("2025-05-27T19:55:00+02:00"); // Warsaw time (CEST)
+
+					function updateCountdown() {
+						const now = new Date();
+
+						// Convert to Warsaw time using UTC+2 (Poland daylight saving time)
+						const localOffset = now.getTimezoneOffset() * 60000;
+						const localTime = new Date(now.getTime() + localOffset + 2 * 60 * 60 * 1000);
+
+						const diff = targetDate - localTime;
+
+						if (diff <= 0) {
+							surpriseText.innerText = "Skopiuj ten kod: 36471fde-d322-4d0a-98d9-accaf6d6ad83";
+							countdown.innerText = "";
+							giftImage.src = "/static/images/giftopen.png";
+
+							finalMessage.innerHTML = `
+		<a href="/static/images/adventure.pdf" download>
+			<button style="margin: 10px;">📥 1. Pobierz szczegóły PDF</button>
+		</a>
+		<a href="https://www.przygodawsieci.pl/game/start" target="_blank">
+			<button style="margin: 10px;">🌍 2. Przejdź na stronę 😉</button>
+		</a>
+	`;
+							return;
+						}
+
+						const totalSeconds = Math.floor(diff / 1000);
+						const hours = Math.floor((totalSeconds / 3600));
+						const minutes = Math.floor((totalSeconds % 3600) / 60);
+						const seconds = totalSeconds % 60;
+
+						countdown.innerText = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+					}
+
+
+					// Update every second
+					updateCountdown();
+					setInterval(updateCountdown, 1000);
+				});
+			</script>
+				
 	</body>
 </html>

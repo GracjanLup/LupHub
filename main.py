@@ -34,6 +34,10 @@ async def read_articles(request: Request):
 async def read_author(request: Request):
     return templates.TemplateResponse("author.html", {"request": request})
 
+@app.get("/werka", response_class=HTMLResponse)
+async def read_werka(request: Request):
+    return templates.TemplateResponse("werka.html", {"request": request})
+
 @app.get("/test")
 def test_endpoint():
     return {"message": "Test works!"}
