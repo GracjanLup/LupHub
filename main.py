@@ -38,6 +38,10 @@ async def read_author(request: Request):
 async def read_werka(request: Request):
     return templates.TemplateResponse("werka.html", {"request": request})
 
+@app.get("/wano", response_class=HTMLResponse)
+async def read_wano(request: Request):
+    return templates.TemplateResponse("wano.html", {"request": request})
+
 @app.get("/test")
 def test_endpoint():
     return {"message": "Test works!"}
@@ -77,5 +81,4 @@ async def chat_with_model(message: Message):
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
-
 
