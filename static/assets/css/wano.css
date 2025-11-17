@@ -1,0 +1,232 @@
+/* Reused highlight cards (moved from inline styles) */
+.wano-highlights {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2rem;
+    margin-top: 3rem;
+}
+
+.wano-card {
+    padding: 2rem;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 35px rgba(18, 25, 47, 0.25);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    backdrop-filter: blur(6px);
+}
+
+.wano-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 24px 40px rgba(18, 25, 47, 0.35);
+}
+
+.wano-card h3 {
+    margin-bottom: 0.75rem;
+    font-size: 1.4rem;
+    letter-spacing: 0.015em;
+}
+
+.wano-card p {
+    margin-bottom: 0;
+    line-height: 1.75;
+}
+
+.wano-scroll {
+    list-style: none;
+    padding-left: 0;
+}
+
+.wano-scroll li {
+    position: relative;
+    padding-left: 2.4rem;
+    margin-bottom: 1.6rem;
+    line-height: 1.7;
+}
+
+.wano-scroll li::before {
+    content: "";
+    position: absolute;
+    left: 0.7rem;
+    top: 0.3rem;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: #ff7b7b;
+    box-shadow: 0 0 0 6px rgba(255, 123, 123, 0.15);
+}
+
+.wano-scroll li strong {
+    display: block;
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+}
+
+.wano-tip {
+    border-left: 4px solid #f7a046;
+    padding: 1.6rem 2rem;
+    margin: 3rem 0;
+    background: rgba(247, 160, 70, 0.08);
+    border-radius: 8px;
+    line-height: 1.75;
+}
+
+@media screen and (max-width: 980px) {
+    .wano-card {
+        padding: 1.75rem;
+    }
+}
+
+/* New WANO generator layout */
+.wano-section .major p {
+    max-width: 780px;
+    margin: 0 auto;
+}
+
+.wano-panel {
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 2.5rem;
+    background: rgba(255, 255, 255, 0.02);
+    box-shadow: 0 18px 35px rgba(0, 0, 0, 0.25);
+}
+
+.wano-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.wano-btn {
+    width: 100%;
+    border-radius: 14px;
+    border: 2px solid #d1d7ff;
+    background: linear-gradient(145deg, #1c1f3a, #15182d);
+    color: #f0f3ff;
+    padding: 1rem 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.wano-btn:hover {
+    transform: translateY(-2px);
+    border-color: #7fb8ff;
+    box-shadow: 0 16px 32px rgba(27, 109, 255, 0.25);
+}
+
+.wano-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.wano-status {
+    margin: 0.5rem 0 1.5rem;
+    padding: 0.9rem 1.2rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: #e9edf8;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.wano-status.error {
+    border-color: #ff8a8a;
+    color: #ffdede;
+}
+
+.wano-dropzone {
+    margin: 1rem 0 2rem;
+    padding: 2.4rem 1.4rem;
+    border: 2px dashed #cdd3f8;
+    border-radius: 18px;
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    background: rgba(255, 255, 255, 0.01);
+    cursor: pointer;
+}
+
+.wano-dropzone.disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.wano-dropzone:hover,
+.wano-dropzone.dragover {
+    border-color: #7fb8ff;
+    background: rgba(127, 184, 255, 0.07);
+}
+
+.wano-drop-title {
+    font-size: 1.35rem;
+    font-weight: 800;
+    margin: 0;
+}
+
+.wano-drop-sub {
+    margin: 0.4rem 0 0;
+    color: #d7dcf5;
+    font-size: 0.95rem;
+}
+
+.wano-versions-title {
+    margin: 0 0 0.75rem;
+    font-weight: 700;
+}
+
+.wano-table-wrapper {
+    border: 2px solid #d1d7ff;
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.wano-table-head,
+.wano-table-row {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    align-items: center;
+}
+
+.wano-table-head {
+    background: rgba(255, 255, 255, 0.08);
+    font-weight: 800;
+    padding: 0.9rem 1rem;
+}
+
+.wano-table-body {
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.wano-table-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.85rem 1rem;
+    gap: 0.5rem;
+}
+
+.wano-table-row:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.wano-table-row a {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: 700;
+}
+
+.wano-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(90, 184, 120, 0.18);
+    border: 1px solid rgba(90, 184, 120, 0.4);
+    font-size: 0.85rem;
+    color: #d8ffe7;
+}

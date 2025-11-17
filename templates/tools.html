@@ -12,6 +12,7 @@
 		<link rel="stylesheet" href="/static/assets/css/main.css" />
 		<noscript><link rel="stylesheet" href="/static/assets/css/noscript.css" /></noscript>
 		<link rel="stylesheet" href="/static/assets/css/chatbot.css">
+		<link rel="stylesheet" href="/static/assets/css/sleep.css">
 	</head>
 	
 
@@ -75,35 +76,52 @@
 					<br>
 					<br>
 					<h2 id="first">
-						<a>Chatbot (ENG) <span class="subtitle">Pretty silly but working and full of potential!</span><span class="subtitle2"> (like me)</span></a>
-					</h2>					
-					<div id="chat-container">
-						<div id="chat-window">
-							<!-- Messages will appear here -->
+						<a>AI Sleep Trainer Alpha <span class="subtitle">Master's Thesis research</span>
+					</h2>
+					<section class="sleep-panel">
+						<div class="sleep-mode-toggle">
+							<button class="sleep-mode-button active" data-mode="talk">Talk about sleep</button>
+							<button class="sleep-mode-button" data-mode="course">Sleep course</button>
 						</div>
-						<div id="input-area">
-							<div id="example-prompts">
-								<button id="prompt1" class="example-button">What can I find in the Articles section?</button>
-								<button id="prompt2" class="example-button">What is machine learning?</button>
-								<button id="prompt3" class="example-button">Who is Gracjan Popiółkowski?</button>
+						<div class="sleep-mode-section active" id="sleep-mode-talk">
+							<h3>Talk about sleep</h3>
+							<div id="chat-container">
+								<div id="chat-window">
+									<!-- Messages will appear here -->
+								</div>
+								<div id="input-area">
+									<div id="example-prompts">
+										<!-- <button id="prompt1" class="example-button">What can I find in the Articles section?</button>
+										<button id="prompt2" class="example-button">What is machine learning?</button>
+										<button id="prompt3" class="example-button">Who is Gracjan Popiółkowski?</button> -->
+									</div>
+									<div id="input-container">
+										<input type="text" id="user-input" placeholder="Type your message here..." />
+										<button id="send-button">Send</button>
+									</div>
+								</div>
 							</div>
-							<div id="input-container">
-								<input type="text" id="user-input" placeholder="Type your message here..." />
-								<button id="send-button">Send</button>
+						</div>
+						<div class="sleep-mode-section" id="sleep-mode-course">
+							<h3>Sleep Course Alpha (preview)</h3>
+							<div class="sleep-day-buttons" id="sleep-day-buttons">
+								<!-- Buttons injected by sleep.js -->
+							</div>
+							<div id="sleep-day-content">
+								<h4 id="sleep-day-heading">Pick any day to preview the questions.</h4>
+								<div id="sleep-question-list" class="sleep-question-list"></div>
+								<div class="sleep-actions">
+									<button class="sleep-generate-button" id="sleep-generate-button">Generate AI lesson</button>
+									<span class="sleep-status-text" id="sleep-status-text">Waiting for inputs...</span>
+								</div>
+								<div class="sleep-lesson-box" id="sleep-lesson-box"></div>
 							</div>
 						</div>
-					</div>
-						<!-- <div id="chat-window">
-						</div>
-					
-						<div id="input-area">
-							<input type="text" id="user-input" placeholder="Type your message here...">
-							<button id="send-button">Send</button>
-						</div> -->
+					</section>
 					<br>
 					<br>
 					<br>
-					<h2 id="second"><a>In progress</a></h2>
+					<h2 id="second"><a>AI investment portfolio generator <span class="subtitle">In progress</span></a></h2>
 					<br>
 					<br>
 					<br>
@@ -113,10 +131,7 @@
 					<br>
 					<br>
 					<br>
-					<br>
-					<br>
-					<br>
-					<h2 id="third"><a>In progress</a></h2>
+					<h2 id="third"><a>AI diet and training generator <span class="subtitle">In progress</span></a></h2>
 					<br>
 					<br>
 					<br>
@@ -155,5 +170,6 @@
 			<script src="/static/assets/js/util.js"></script>
 			<script src="/static/assets/js/main.js"></script>
 			<script src="/static/assets/js/chatbot.js"></script>
+			<script src="/static/assets/js/sleep.js"></script>
 	</body>
 </html>

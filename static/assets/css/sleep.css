@@ -1,0 +1,178 @@
+.sleep-panel {
+    padding: 1.75rem;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 0.65rem;
+    background: rgba(255,255,255,0.02);
+}
+
+.sleep-panel button {
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sleep-mode-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+    width: 100%;
+    max-width: 350px;
+    margin: 0 auto 1.5rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.05);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Base button style */
+.sleep-mode-button {
+    flex: 1;
+    background: transparent;
+    color: inherit;
+    border: none;
+    padding: 0.45rem 0;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+}
+
+/* Remove focus outline */
+.sleep-mode-button:focus,
+.sleep-mode-button:active {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Active and inactive colors */
+.sleep-mode-button.active {
+    background: #ff6584;
+    color: #111;
+}
+
+.sleep-mode-button:not(.active) {
+    background: #dcdcdc;
+    color: #111;
+}
+
+.sleep-mode-section {
+    display: none;
+}
+
+.sleep-mode-section.active {
+    display: block;
+}
+
+/* Shape adjustments */
+.sleep-mode-button:first-child {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-left-radius: 999px;
+    border-bottom-left-radius: 999px;
+}
+
+.sleep-mode-button:last-child {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-top-right-radius: 999px;
+    border-bottom-right-radius: 999px;
+}
+
+/* Remove any unwanted inner border gap */
+.sleep-mode-button + .sleep-mode-button {
+    border-left: none;
+}
+
+.sleep-day-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.sleep-day-button {
+    border: 1px solid rgba(255,255,255,0.3);
+    background: transparent;
+    color: inherit;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.sleep-day-button.active {
+    background: #ff6584;
+    color: #111;
+    border-color: #ff6584;
+}
+
+.sleep-question-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.sleep-question-item label {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.35rem;
+}
+
+.sleep-question-item textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 0.6rem;
+    border-radius: 0.4rem;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(0,0,0,0.2);
+    color: inherit;
+    resize: vertical;
+}
+
+.sleep-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.sleep-generate-button {
+    background: #ff6584;
+    color: #111;
+    border: none;
+    border-radius: 0.4rem;
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sleep-status-text {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    display: none;
+}
+
+.sleep-lesson-box {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    background: rgba(255,255,255,0.05);
+}
+
+.sleep-lesson-box strong {
+    display: block;
+    margin-bottom: 0.4rem;
+}
