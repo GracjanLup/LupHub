@@ -1,16 +1,18 @@
 import asyncio
 import logging
 import os
+import re
+from datetime import datetime
 from typing import List, Optional
 
 import requests
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import File, FastAPI, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from static.CreatorAPI import GenerationError, generate_price_list
+from static.assets.CreatorAPI import GenerationError, generate_price_list
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
@@ -28,6 +30,31 @@ SLEEP_COURSE_MODEL = os.environ.get("SLEEP_COURSE_MODEL") or os.environ.get(
     "MISTRAL_MODEL", "mistral:7b-instruct"
 )
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "90"))
+
+# Upload configuration
+WANO_UPLOAD_DIR = os.environ.get("WANO_UPLOAD_DIR", "/home/wano/cenniki")
+WANO_PDF_OUTPUT_DIR = os.environ.get("WANO_PDF_OUTPUT_DIR", "/home/wano/cennikiPDF")
+WANO_PDFY_DIR = os.environ.get("WANO_PDFY_DIR", "/home/wano/pdfy")
+WANO_EX_DIR = os.environ.get("WANO_EX_DIR", "/home/wano/ex")
+
+
+def _find_latest_file(directory: str, exts: set[str]) -> Optional[str]:
+    if not os.path.exists(directory):
+        return None
+    latest_file = None
+    latest_mtime = -1
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path):
+            continue
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext not in exts:
+            continue
+        mtime = os.path.getmtime(path)
+        if mtime > latest_mtime:
+            latest_mtime = mtime
+            latest_file = path
+    return latest_file
 
 
 class Message(BaseModel):
@@ -173,11 +200,179 @@ async def generate_sleep_lesson(payload: SleepLessonRequest):
 
 @app.post("/api/wano/generate/{language}")
 async def generate_wano_pdf(language: str):
+    latest_excel = _find_latest_file(WANO_UPLOAD_DIR, {"xlsm", "xlsx"})
+    if not latest_excel:
+        raise HTTPException(status_code=400, detail="Brak źródłowego pliku cennika w /home/wano/cenniki.")
+
     try:
-        output = await asyncio.to_thread(generate_price_list, language)
-        return {"message": "PDF wygenerowany", "output": output, "language": language}
+        output = await asyncio.to_thread(generate_price_list, language, latest_excel)
+        download_href = f"/api/wano/download/pdf/{os.path.basename(output)}"
+        return {"message": "PDF wygenerowany", "output": output, "language": language, "download": download_href}
     except GenerationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - defensive
         logging.error("WANO generation error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Błąd generowania cennika.")
+
+
+@app.post("/api/wano/upload")
+async def upload_wano_file(file: UploadFile = File(...)):
+    allowed_ext = {"xlsm", "xlsx"}
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail="Dozwolone są jedynie pliki .xlsm lub .xlsx.")
+
+    os.makedirs(WANO_UPLOAD_DIR, exist_ok=True)
+    safe_name = os.path.basename(filename)
+    base, original_ext = os.path.splitext(safe_name)
+
+    # Znajdź najwyższy sufiks numeryczny dla danego prefixu i przedłuż.
+    try:
+        existing = os.listdir(WANO_UPLOAD_DIR)
+    except FileNotFoundError:
+        existing = []
+
+    pattern = re.compile(rf"^{re.escape(base)}(\d+)?{re.escape(original_ext)}$", re.IGNORECASE)
+    max_suffix = 0
+    for name in existing:
+        match = pattern.match(name)
+        if match:
+            suffix = match.group(1)
+            if suffix and suffix.isdigit():
+                max_suffix = max(max_suffix, int(suffix))
+            else:
+                max_suffix = max(max_suffix, 0)
+
+    next_suffix = max_suffix + 1
+    numbered_name = f"{base}{next_suffix}{original_ext}"
+    dest_path = os.path.abspath(os.path.join(WANO_UPLOAD_DIR, numbered_name))
+
+    try:
+        contents = await file.read()
+        with open(dest_path, "wb") as out_file:
+            out_file.write(contents)
+    except Exception as exc:
+        logging.error("WANO upload error (write): %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Nie udało się zapisać pliku ({exc}). Ścieżka: {dest_path}",
+        )
+
+    return {
+        "message": "Plik zapisany",
+        "filename": numbered_name,
+        "path": f"/api/wano/download/{numbered_name}",
+        "info": "Wgrany przez UI",
+    }
+
+
+@app.get("/api/wano/download/{filename}")
+async def download_wano_file(filename: str):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(WANO_UPLOAD_DIR, safe_name))
+
+    # zabezpieczenie przed wyjściem poza katalog
+    if not file_path.startswith(os.path.abspath(WANO_UPLOAD_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Plik nie istnieje.")
+
+    return FileResponse(file_path, filename=safe_name)
+
+
+@app.get("/api/wano/files")
+async def list_wano_files():
+    if not os.path.exists(WANO_UPLOAD_DIR):
+        return {"files": []}
+
+    files = []
+    for name in os.listdir(WANO_UPLOAD_DIR):
+        safe_name = os.path.basename(name)
+        ext = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+        if ext not in {"xlsm", "xlsx"}:
+            continue
+        path = os.path.abspath(os.path.join(WANO_UPLOAD_DIR, safe_name))
+        if not os.path.isfile(path):
+            continue
+        mtime = datetime.fromtimestamp(os.path.getmtime(path))
+        files.append(
+            {
+                "file": safe_name,
+                "info": "Wersja z dysku",
+                "date": mtime.strftime("%Y-%m-%d %H:%M"),
+                "href": f"/api/wano/download/{safe_name}",
+            }
+        )
+
+    files.sort(key=lambda x: x["date"], reverse=True)
+    return {"files": files}
+
+
+def _is_lang_pdf(name: str, lang: str) -> bool:
+    lower = name.lower()
+    if not lower.endswith(".pdf"):
+        return False
+    if lang == "pl":
+        if "en" in lower or "price" in lower:
+            return False
+        return ("pl" in lower) or ("cennik" in lower)
+    if lang == "en":
+        return ("en" in lower) or ("price" in lower)
+    return False
+
+
+def _latest_pdf(lang: str) -> Optional[dict]:
+    if not os.path.exists(WANO_PDF_OUTPUT_DIR):
+        return None
+    latest = None
+    latest_mtime = -1
+
+    for name in os.listdir(WANO_PDF_OUTPUT_DIR):
+        if not _is_lang_pdf(name, lang):
+            continue
+        path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, name))
+        if not os.path.isfile(path):
+            continue
+        mtime = os.path.getmtime(path)
+        if mtime > latest_mtime:
+            latest_mtime = mtime
+            latest = {
+                "file": name,
+                "href": f"/api/wano/download/pdf/{name}",
+                "date": datetime.fromtimestamp(mtime).strftime("%d.%m.%Y"),
+            }
+    return latest
+
+
+@app.get("/api/wano/latest-pdfs")
+async def get_latest_pdfs():
+    return {"pl": _latest_pdf("pl"), "en": _latest_pdf("en")}
+
+
+@app.get("/api/wano/download/pdf/{filename}")
+async def download_pdf(filename: str):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, safe_name))
+
+    if not file_path.startswith(os.path.abspath(WANO_PDF_OUTPUT_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Plik nie istnieje.")
+
+    return FileResponse(file_path, filename=safe_name)
+
+
+@app.get("/api/wano/download-latest/{language}")
+async def download_latest_pdf(language: str):
+    language = language.lower()
+    if language not in {"pl", "en"}:
+        raise HTTPException(status_code=400, detail="Język musi być pl albo en.")
+    latest = _latest_pdf(language)
+    if not latest:
+        raise HTTPException(status_code=404, detail="Brak wygenerowanego pliku.")
+    safe_name = os.path.basename(latest["file"])
+    file_path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, safe_name))
+    return FileResponse(file_path, filename=safe_name)

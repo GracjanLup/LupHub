@@ -10,7 +10,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
         <link rel="stylesheet" href="/static/assets/css/main.css" />
-        <link rel="stylesheet" href="/static/assets/css/wano.css" />
+        <link rel="stylesheet" href="/static/assets/css/wano.css?v=2" />
         <noscript><link rel="stylesheet" href="/static/assets/css/noscript.css" /></noscript>
     </head>
     <body class="is-preload">
@@ -37,14 +37,25 @@
                                     </div>
 
                                     <div class="wano-status" id="wano-status">Gotowy do działania.</div>
+                                    <div class="wano-progress" id="wano-progress" hidden>
+                                        <div class="wano-progress-bar">
+                                            <div class="wano-progress-fill" id="wano-progress-fill"></div>
+                                        </div>
+                                        <div class="wano-progress-text" id="wano-progress-text">0%</div>
+                                    </div>
+
+                                    <div class="wano-downloads">
+                                        <button class="wano-btn" id="download-latest-pl" disabled>Pobierz najnowszy plik PL</button>
+                                        <button class="wano-btn" id="download-latest-en" disabled>Pobierz najnowszy plik EN</button>
+                                    </div>
 
                                     <div class="wano-dropzone" id="wano-dropzone">
-                                        <input type="file" id="wano-file-input" accept=".xlsx,.xlsm" hidden />
-                                        <p class="wano-drop-title">Wstaw nowy cennik .xlsx</p>
+                                        <input type="file" id="wano-file-input" accept=".xlsm,.xlsx" hidden />
+                                        <p class="wano-drop-title">Wstaw nowy cennik .xlsm/.xlsx</p>
                                         <p class="wano-drop-sub">Przeciągnij i upuść plik lub kliknij, aby wybrać.</p>
                                     </div>
 
-                                    <p class="wano-versions-title">Wszystkie wersje cennika (program generuje PDF na bazie ostatnio wstawionej wersji):</p>
+                                    <p class="wano-versions-title">Wszystkie wersje cennika (program generuje PDFy na bazie ostatnio wstawionej wersji):</p>
 
                                     <div class="wano-table-wrapper">
                                         <div class="wano-table-head">
@@ -80,6 +91,6 @@
             <script src="/static/assets/js/breakpoints.min.js"></script>
             <script src="/static/assets/js/util.js"></script>
             <script src="/static/assets/js/main.js"></script>
-            <script src="/static/assets/js/wano.js"></script>
+            <script src="/static/assets/js/wano.js?v=2"></script>
     </body>
 </html>

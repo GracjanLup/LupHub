@@ -98,23 +98,33 @@
     margin-bottom: 1rem;
 }
 
+.wano-downloads {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
 .wano-btn {
     width: 100%;
     border-radius: 14px;
-    border: 2px solid #d1d7ff;
-    background: linear-gradient(145deg, #1c1f3a, #15182d);
-    color: #f0f3ff;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    background: #ffffff;
+    color: #111111;
     padding: 1rem 1.5rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .wano-btn:hover {
     transform: translateY(-2px);
-    border-color: #7fb8ff;
-    box-shadow: 0 16px 32px rgba(27, 109, 255, 0.25);
+    border-color: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.15);
 }
 
 .wano-btn:disabled {
@@ -128,15 +138,46 @@
     padding: 0.9rem 1.2rem;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: #e9edf8;
+    background: rgba(255, 255, 255, 0.08);
+    color: #111111;
     font-weight: 600;
     letter-spacing: 0.01em;
 }
 
 .wano-status.error {
     border-color: #ff8a8a;
-    color: #ffdede;
+    color: #111111;
+}
+
+.wano-progress {
+    margin: 0 0 1.4rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.wano-progress-bar {
+    flex: 1;
+    height: 10px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.wano-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4c9fff, #79f2b8);
+    border-radius: 999px;
+    transition: width 0.1s ease;
+}
+
+.wano-progress-text {
+    min-width: 60px;
+    text-align: right;
+    font-weight: 700;
+    color: #111111;
 }
 
 .wano-dropzone {
@@ -148,6 +189,10 @@
     transition: border-color 0.15s ease, background 0.15s ease;
     background: rgba(255, 255, 255, 0.01);
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .wano-dropzone.disabled {
@@ -169,7 +214,7 @@
 
 .wano-drop-sub {
     margin: 0.4rem 0 0;
-    color: #d7dcf5;
+    color: #555;
     font-size: 0.95rem;
 }
 
@@ -199,7 +244,7 @@
 }
 
 .wano-table-body {
-    max-height: 280px;
+    max-height: 360px;
     overflow-y: auto;
 }
 
@@ -214,9 +259,13 @@
 }
 
 .wano-table-row a {
-    color: #fff;
+    color: #111;
     text-decoration: underline;
     font-weight: 700;
+}
+
+.wano-table-row a:hover {
+    color: #2d7dff;
 }
 
 .wano-chip {
