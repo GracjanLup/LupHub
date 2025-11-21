@@ -149,6 +149,28 @@
     color: #111111;
 }
 
+.wano-video {
+    margin: 0 0 1.5rem;
+}
+
+.wano-video-frame {
+    position: relative;
+    padding-bottom: 56.25%;
+    height: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+.wano-video-frame iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
 .wano-progress {
     margin: 0 0 1.4rem;
     display: flex;
@@ -198,6 +220,46 @@
 .wano-dropzone.disabled {
     opacity: 0.6;
     cursor: wait;
+}
+
+.wano-info-form {
+    display: none;
+    margin: 0 0 0.4rem;
+    padding: 1.2rem 1rem;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    background: #ffffff;
+    flex-direction: column;
+    gap: 0.6rem;
+    align-items: flex-start;
+}
+
+.wano-info-form.visible {
+    display: flex;
+}
+
+.wano-info-form input[type="text"] {
+    width: 100%;
+    max-width: 480px;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    background: #fff;
+    color: #111;
+    box-sizing: border-box;
+}
+
+.wano-info-form label {
+    font-weight: 700;
+    color: #222;
+    margin-right: 0.5rem;
+}
+
+.wano-info-form .wano-info-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: 100%;
 }
 
 .wano-dropzone:hover,
@@ -278,4 +340,8 @@
     border: 1px solid rgba(90, 184, 120, 0.4);
     font-size: 0.85rem;
     color: #d8ffe7;
+}
+
+[hidden] {
+    display: none !important;
 }

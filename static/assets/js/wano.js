@@ -47,7 +47,8 @@
     let genTotalMs = BASE_TOTAL_MS;
     let nextMilestoneIdx = 0;
     let uploadedFilename = null;
-    let uploadedFilename = null;
+    let pendingInfoText = null;
+    let uploadInProgress = false;
 
     function formatDate(d = new Date()) {
         const pad = (v) => String(v).padStart(2, "0");
@@ -222,7 +223,8 @@
             stopProgressPolling();
             setStatus(`✅ ${message || "Gotowe"}`);
             setLoading(false);
-            loadVersions();
+            hideInfoForm();
+    loadVersions();
             loadLatestPdfs();
             generationActive = false;
             currentGenLanguage = null;
@@ -268,15 +270,16 @@
 
     function showInfoForm(fileName) {
         uploadedFilename = fileName;
+        pendingInfoText = null;
         if (infoFilename) infoFilename.textContent = `Plik: ${fileName}`;
         if (infoInput) infoInput.value = "";
-        if (infoForm) infoForm.hidden = false;
+        if (infoForm) { infoForm.hidden = false; infoForm.classList.add('visible'); }
         if (dropzone) dropzone.hidden = true;
     }
 
     function hideInfoForm() {
         uploadedFilename = null;
-        if (infoForm) infoForm.hidden = true;
+        if (infoForm) { infoForm.hidden = true; infoForm.classList.remove('visible'); }
         if (dropzone) dropzone.hidden = false;
         if (infoInput) infoInput.value = "";
         if (infoFilename) infoFilename.textContent = "";
@@ -321,6 +324,7 @@
             generationActive = false;
             currentGenLanguage = null;
             updateGenTimer(0);
+            hideInfoForm();
         }
     }
 
@@ -334,6 +338,8 @@
     async function uploadFile(file) {
         setStatus(`Wgrywam "${file.name}"...`);
         setLoading(true);
+        uploadInProgress = true;
+        showInfoForm(file.name);
         showProgress(uploadProgressWrap, uploadProgressFill, uploadProgressText, 0);
 
         const formData = new FormData();
@@ -349,33 +355,44 @@
             }
         };
 
-        xhr.onload = () => {
+        xhr.onload = async () => {
             hideProgress(uploadProgressWrap);
             setLoading(false);
+            uploadInProgress = false;
             if (fileInput) fileInput.value = "";
 
-            try {
-                const payload = JSON.parse(xhr.responseText || "{}");
-                if (xhr.status < 200 || xhr.status >= 300) {
-                    const detail = payload.detail || payload.message || "Błąd wgrywania pliku.";
-                    throw new Error(detail);
-                }
+        try {
+            const payload = JSON.parse(xhr.responseText || "{}");
+            if (xhr.status < 200 || xhr.status >= 300) {
+                const detail = payload.detail || payload.message || "Błąd wgrywania pliku.";
+                throw new Error(detail);
+            }
 
-                const savedName = payload.filename || payload.saved || file.name;
-                setStatus(`Wgrano: ${savedName}. Dodaj opis i zatwierdź.`);
-                showInfoForm(savedName);
-            } catch (error) {
-                console.error(error);
-                const message = error instanceof Error ? error.message : "Wystąpił błąd.";
-                setStatus(`❌ ${message}`, "error");
+            const savedName = payload.filename || payload.saved || file.name;
+            uploadedFilename = savedName;
+            if (infoFilename) infoFilename.textContent = `Plik: ${savedName}`;
+            setStatus(`Wgrano: ${savedName}. Dodaj opis i zatwierdź.`);
+            if (pendingInfoText !== null) {
+                const infoText = pendingInfoText;
+                pendingInfoText = null;
+                await submitInfo(infoText);
+                }
+        } catch (error) {
+            console.error(error);
+            const message = error instanceof Error ? error.message : "Wystąpił błąd.";
+            setStatus(`❌ ${message}`, "error");
+            hideInfoForm();
             }
         };
 
         xhr.onerror = () => {
             hideProgress(uploadProgressWrap);
+            uploadInProgress = false;
             setLoading(false);
+            pendingInfoText = null;
             if (fileInput) fileInput.value = "";
             setStatus("❌ Błąd wgrywania pliku (połączenie).", "error");
+            hideInfoForm();
         };
 
         xhr.send(formData);
@@ -392,35 +409,45 @@
         }
     }
 
-    async function submitInfo() {
-        if (!uploadedFilename) {
+    async function saveInfo(filename, infoText) {
+        const payload = { filename, info: infoText || "" };
+        const res = await fetch("/api/wano/info", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const detail = data.detail || data.message || "Błąd zapisu opisu.";
+            throw new Error(detail);
+        }
+    }
+
+    async function submitInfo(forceText = null) {
+        const infoText = forceText !== null ? forceText : infoInput?.value || "";
+        if (uploadInProgress) {
+            pendingInfoText = infoText;
+            if (infoSubmit) infoSubmit.disabled = true;
             hideInfoForm();
             return;
         }
-        const payload = { filename: uploadedFilename, info: infoInput?.value || "" };
+        if (!uploadedFilename) {
+            return;
+        }
         if (infoSubmit) infoSubmit.disabled = true;
         setStatus("Zapisuję opis...");
         try {
-            const res = await fetch("/api/wano/info", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                const detail = data.detail || data.message || "Błąd zapisu opisu.";
-                throw new Error(detail);
-            }
-            setStatus(`Opis zapisany dla ${uploadedFilename || ""}`);
+            await saveInfo(uploadedFilename, infoText);
+            setStatus("Plik załadowany pomyślnie");
             hideInfoForm();
             await loadVersions();
+            await loadLatestPdfs();
         } catch (error) {
             console.error(error);
             const message = error instanceof Error ? error.message : "Błąd zapisu opisu.";
             setStatus(`❌ ${message}`, "error");
         } finally {
             if (infoSubmit) infoSubmit.disabled = false;
-            uploadedFilename = null;
         }
     }
 
@@ -519,6 +546,7 @@
         });
     }
 
+    hideInfoForm();
     loadVersions();
     loadLatestPdfs();
     wireDownloadButtons();

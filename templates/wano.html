@@ -30,6 +30,12 @@
                                     <p>Tutaj możesz pobrać najnowszą wersję cennika, wygenerować PDF w dwóch językach i pobrać starsze wersje cennika.</p>
                                 </header>
 
+                                <div class="wano-video">
+                                    <div class="wano-video-frame">
+                                        <iframe width="560" height="315" src="https://www.youtube.com/embed/2xx2zKNzWeA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                                    </div>
+                                </div>
+
                                 <div class="wano-panel">    
                                     <div class="wano-controls">
                                         <button class="wano-btn" data-lang="pl" id="generate-pl">Wygeneruj Cennik PL</button>
@@ -59,8 +65,10 @@
                                     <div class="wano-info-form" id="wano-info-form" hidden>
                                         <p class="wano-drop-title">Dodaj opis do wgranego pliku</p>
                                         <p id="wano-info-filename" class="wano-drop-sub"></p>
-                                        <label for="wano-info-input">Info:</label>
-                                        <input type="text" id="wano-info-input" maxlength="200" />
+                                        <div class="wano-info-row">
+                                            <label for="wano-info-input">Info:</label>
+                                            <input type="text" id="wano-info-input" maxlength="200" />
+                                        </div>
                                         <button class="wano-btn" id="wano-info-submit">Zatwierdź</button>
                                     </div>
                                     <div class="wano-progress" id="wano-progress-upload" hidden>
