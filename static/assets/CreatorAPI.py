@@ -8,15 +8,21 @@ from typing import Iterable, List, Optional
 
 from PyPDF2 import PdfMerger
 
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.environ.get("WANO_BASE_DIR", "/home/wano")
 EXCEL_PATH = os.environ.get("WANO_EXCEL_PATH") or os.path.join(BASE_DIR, "cenniki", "Cennik Partnera WANO.xlsm")
 EXPORT_DIR = os.environ.get("WANO_EXPORT_DIR") or os.path.join(BASE_DIR, "ex")
 PDFY_DIR = os.environ.get("WANO_PDFY_DIR") or os.path.join(BASE_DIR, "pdfy")
-OUTPUT_DIR = os.environ.get("WANO_OUTPUT_DIR") or os.path.join(BASE_DIR, "cennikiPDF")
-OUTPUT_FILE_PL = os.environ.get("WANO_OUTPUT_PL") or os.path.join(OUTPUT_DIR, "Cennik B2B WANO.pdf")
-OUTPUT_FILE_EN = os.environ.get("WANO_OUTPUT_EN") or os.path.join(OUTPUT_DIR, "Price List B2B WANO.pdf")
+OUTPUT_DIR_PL = os.environ.get("WANO_OUTPUT_PL_DIR") or os.path.join(BASE_DIR, "cennikiPDF-PL")
+OUTPUT_DIR_EN = os.environ.get("WANO_OUTPUT_EN_DIR") or os.path.join(BASE_DIR, "cennikiPDF-EN")
+OUTPUT_FILE_PL = os.path.join(OUTPUT_DIR_PL, "Cennik B2B WANO.pdf")
+OUTPUT_FILE_EN = os.path.join(OUTPUT_DIR_EN, "Price List B2B WANO.pdf")
 
 
 class GenerationError(Exception):
@@ -52,15 +58,32 @@ def _merge_pdf_list(paths: Iterable[str], output_file: str) -> str:
         merger.close()
 
 
+def _find_soffice_binary() -> str:
+    candidates = [
+        os.environ.get("SOFFICE_PATH"),
+        shutil.which("libreoffice"),
+        shutil.which("soffice"),
+        "/usr/bin/libreoffice",
+        "/usr/bin/soffice",
+        "/usr/local/bin/libreoffice",
+        "/usr/local/bin/soffice",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    raise GenerationError(
+        "Brak libreoffice/soffice w PATH ani w standardowych lokalizacjach. "
+        "Ustaw zmienną SOFFICE_PATH lub dodaj LibreOffice do PATH."
+    )
+
+
 def _convert_excel_to_pdf(excel_path: str, dest_dir: str) -> str:
     os.makedirs(dest_dir, exist_ok=True)
     excel_abs = os.path.abspath(excel_path)
     out_name = os.path.splitext(os.path.basename(excel_abs))[0] + ".pdf"
     out_path = os.path.join(dest_dir, out_name)
 
-    soffice = shutil.which("libreoffice") or shutil.which("soffice")
-    if not soffice:
-        raise GenerationError("Brak libreoffice/soffice w PATH (wymagane do konwersji Excela na PDF).")
+    soffice = _find_soffice_binary()
 
     cmd = [
         soffice,
@@ -71,8 +94,24 @@ def _convert_excel_to_pdf(excel_path: str, dest_dir: str) -> str:
         dest_dir,
         excel_abs,
     ]
+    env = os.environ.copy()
+    default_paths = [
+        "/usr/local/sbin",
+        "/usr/local/bin",
+        "/usr/sbin",
+        "/usr/bin",
+        "/sbin",
+        "/bin",
+    ]
+    env_paths = env.get("PATH", "").split(":")
+    for p in default_paths:
+        if p not in env_paths:
+            env_paths.append(p)
+    env["PATH"] = ":".join(env_paths)
+    env["HOME"] = env.get("HOME", "/tmp")
+
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     except subprocess.CalledProcessError as exc:
         stderr_msg = exc.stderr.decode(errors="ignore") if exc.stderr else str(exc)
         raise GenerationError(f"Konwersja przez libreoffice nie powiodła się: {stderr_msg}") from exc
@@ -82,8 +121,192 @@ def _convert_excel_to_pdf(excel_path: str, dest_dir: str) -> str:
     return out_path
 
 
-def generate_price_list(language: str, excel_path: Optional[str] = None) -> str:
-    """Generuje cennik PDF (Linux, libreoffice)."""
+def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Optional[str]:
+    """Eksport arkusza przez UNO, usuwając inne arkusze i zachowując grafiki."""
+    try:
+        import uno
+        import unohelper
+        from com.sun.star.beans import PropertyValue
+    except ImportError:
+        logger.warning("UNO not available; skipping UNO export for %s", sheet_name)
+        return None
+
+    soffice = _find_soffice_binary()
+    os.makedirs(os.path.dirname(os.path.abspath(target_pdf)) or ".", exist_ok=True)
+    tmp_profile = tempfile.mkdtemp(prefix="lo-profile-")
+    office_cmd = [
+        soffice,
+        "--headless",
+        "--nologo",
+        "--nodefault",
+        "--nofirststartwizard",
+        f"-env:UserInstallation=file://{tmp_profile}",
+        "--accept=socket,host=127.0.0.1,port=2002;urp;",
+    ]
+    office_proc = subprocess.Popen(office_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def _connect():
+        local_ctx = uno.getComponentContext()
+        resolver = local_ctx.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", local_ctx)
+        return resolver.resolve("uno:socket,host=127.0.0.1,port=2002;urp;StarOffice.ComponentContext")
+
+    ctx = None
+    for _ in range(40):
+        try:
+            ctx = _connect()
+            break
+        except Exception:
+            import time
+
+            time.sleep(0.1)
+    if ctx is None:
+        office_proc.terminate()
+        return None
+
+    smgr = ctx.getServiceManager()
+    desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+
+    source_url = unohelper.systemPathToFileUrl(os.path.abspath(excel_path))
+    load_props = (PropertyValue("Hidden", 0, True, 0),)
+    doc = desktop.loadComponentFromURL(source_url, "_blank", 0, load_props)
+    if doc is None:
+        desktop.terminate()
+        office_proc.terminate()
+        return None
+
+    single_path = None
+    try:
+        sheets = doc.Sheets
+        if not sheets.hasByName(sheet_name):
+            return None
+        # Usuń wszystkie arkusze poza docelowym
+        for name in list(sheets.ElementNames):
+            if name != sheet_name:
+                try:
+                    sheets.removeByName(name)
+                except Exception:
+                    pass
+        # Ustaw aktywny arkusz na jedyny
+        doc.CurrentController.setActiveSheet(sheets.getByName(sheet_name))
+
+        # Zapisz kopię z jednym arkuszem
+        temp_dir = tempfile.mkdtemp(prefix="wano-uno-")
+        single_path = os.path.join(temp_dir, os.path.basename(excel_path))
+        single_url = unohelper.systemPathToFileUrl(single_path)
+        save_props = (PropertyValue("FilterName", 0, "Calc Office Open XML", 0),)
+        doc.storeToURL(single_url, save_props)
+    except Exception as exc:
+        logger.warning("UNO export failed (prep) for %s: %s", sheet_name, exc)
+        try:
+            doc.close(True)
+        except Exception:
+            pass
+        try:
+            desktop.terminate()
+        except Exception:
+            pass
+        office_proc.terminate()
+        return None
+    finally:
+        try:
+            doc.close(True)
+        except Exception:
+            pass
+        try:
+            desktop.terminate()
+        except Exception:
+            pass
+        office_proc.terminate()
+
+    # Konwersja tej kopii do PDF (cały workbook ma już jeden arkusz)
+    if single_path:
+        try:
+            pdf_generated = _convert_excel_to_pdf(single_path, os.path.dirname(target_pdf))
+            if os.path.exists(pdf_generated):
+                shutil.move(pdf_generated, target_pdf)
+                return target_pdf
+        except Exception as exc:
+            logger.warning("UNO copy convert failed for %s: %s", sheet_name, exc)
+    return None
+
+
+
+def _export_sheets(language_token: str, excel_path: Optional[str] = None, progress_cb=None) -> List[str]:
+    if load_workbook is None:
+        raise GenerationError("Brak biblioteki openpyxl. Zainstaluj ją w venv (`pip install openpyxl`).")
+
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    source_excel = os.path.abspath(excel_path or EXCEL_PATH)
+
+    try:
+        wb = load_workbook(source_excel, keep_vba=True)
+    except Exception as exc:
+        raise GenerationError(f"Nie można otworzyć skoroszytu: {exc}") from exc
+
+    matched_sheets: List[tuple[str, str]] = []
+    sheet_patterns = re.compile(rf"^(\d+{language_token})")
+    for sheet in wb.sheetnames:
+        name = sheet.strip()
+        match = sheet_patterns.match(name)
+        if match:
+            matched_sheets.append((match.group(1), sheet))
+
+    if not matched_sheets:
+        raise GenerationError(f"Nie znaleziono arkuszy pasujących do wzorca *{language_token} w skoroszycie.")
+
+    # Sortuj rosnąco po prefiksie numerycznym, aby zachować kolejność 2,3,4...
+    matched_sheets.sort(key=lambda item: int(re.match(r"(\d+)", item[0]).group(1)))
+
+    total = len(matched_sheets)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        exported_prefixes: List[str] = []
+        for idx, (prefix, sheet_name) in enumerate(matched_sheets, start=1):
+            layout_pdf = os.path.join(PDFY_DIR, f"{prefix}.pdf")
+            num_prefix = int(re.match(r"(\d+)", prefix).group(1))
+            layout_required = num_prefix != 1
+            if layout_required and not os.path.exists(layout_pdf):
+                logger.warning("Pomijam arkusz %s - brak pliku układu: %s", sheet_name, layout_pdf)
+                if progress_cb:
+                    progress_cb("export", min(15 + int((idx / total) * 70), 90), f"Pomijam {sheet_name}")
+                continue
+            if not layout_required and not os.path.exists(layout_pdf):
+                logger.info("Używam Start%s jako layout dla %s", language_token, sheet_name)
+
+            # Najpierw spróbuj UNO (pełny arkusz z grafikami).
+            pdf_path = _export_sheet_uno(source_excel, sheet_name, os.path.join(temp_dir, f"{prefix}ex.pdf"))
+            if pdf_path is None:
+                # fallback: wycinek openpyxl
+                temp_wb = load_workbook(source_excel, keep_vba=True)
+                if sheet_name not in temp_wb.sheetnames:
+                    continue
+                for other in list(temp_wb.sheetnames):
+                    if other != sheet_name:
+                        temp_wb.remove(temp_wb[other])
+                temp_wb.active = temp_wb[sheet_name]
+                temp_excel_path = os.path.join(temp_dir, f"{prefix}.xlsm")
+                temp_wb.save(temp_excel_path)
+                pdf_path = _convert_excel_to_pdf(temp_excel_path, temp_dir)
+
+            final_pdf = os.path.join(EXPORT_DIR, f"{prefix}ex.pdf")
+            shutil.move(pdf_path, final_pdf)
+
+            exported_prefixes.append(prefix)
+            if progress_cb:
+                progress_cb("export", min(15 + int((idx / total) * 70), 90), f"Wyeksportowano {sheet_name}")
+
+    if not exported_prefixes:
+        raise GenerationError(
+            f"Brak arkuszy z plikiem układu w {PDFY_DIR}. Upewnij się, że pliki *.pdf istnieją (np. 2{language_token}.pdf)."
+        )
+
+    return exported_prefixes
+
+
+def generate_price_list(language: str, excel_path: Optional[str] = None, progress_cb=None) -> str:
+    """Generuje cennik PDF (Linux, libreoffice).
+
+    progress_cb(stage, percent, message) — opcjonalny callback do raportowania postępu.
+    """
     language = language.lower()
     if language not in {"pl", "en"}:
         raise GenerationError("Język musi być 'pl' lub 'en'.")
@@ -91,16 +314,40 @@ def generate_price_list(language: str, excel_path: Optional[str] = None) -> str:
     token = "PL" if language == "pl" else "EN"
     output_file = OUTPUT_FILE_PL if language == "pl" else OUTPUT_FILE_EN
 
+    if progress_cb:
+        progress_cb("start", 5, "Start generowania")
+
     _validate_assets(token, excel_path)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        workbook_pdf = _convert_excel_to_pdf(excel_path or EXCEL_PATH, tmpdir)
-        parts = [
-            os.path.join(PDFY_DIR, f"Start{token}.pdf"),
-            workbook_pdf,
-            os.path.join(PDFY_DIR, f"End{token}.pdf"),
-        ]
-        return _merge_pdf_list(parts, output_file)
+    if progress_cb:
+        progress_cb("export", 10, "Eksport arkuszy")
+    prefixes = _export_sheets(token, excel_path, progress_cb)
+
+    if progress_cb:
+        progress_cb("merge", 92, "Scalanie PDF")
+    parts = [os.path.join(PDFY_DIR, f"Start{token}.pdf")]
+    for prefix in prefixes:
+        sheet_pdf = os.path.join(EXPORT_DIR, f"{prefix}ex.pdf")
+        layout_pdf = os.path.join(PDFY_DIR, f"{prefix}.pdf")
+        if not os.path.exists(sheet_pdf):
+            raise GenerationError(f"Brak wygenerowanego PDF: {sheet_pdf}")
+        # Kolejność: Start -> 1ex -> 2.pdf + 2ex -> ... -> End
+        num_prefix = int(re.match(r"(\d+)", prefix).group(1))
+        if num_prefix == 1:
+            parts.append(sheet_pdf)
+            continue
+        if not os.path.exists(layout_pdf):
+            raise GenerationError(f"Brak pliku układu: {layout_pdf}")
+        parts.append(layout_pdf)
+        parts.append(sheet_pdf)
+    parts.append(os.path.join(PDFY_DIR, f"End{token}.pdf"))
+
+    target_dir = OUTPUT_DIR_PL if language == "pl" else OUTPUT_DIR_EN
+    os.makedirs(target_dir, exist_ok=True)
+    result = _merge_pdf_list(parts, output_file)
+    if progress_cb:
+        progress_cb("done", 100, "Gotowe")
+    return result
 
 
 if __name__ == "__main__":

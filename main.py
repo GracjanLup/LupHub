@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import re
+import json
+import threading
 from datetime import datetime
 from typing import List, Optional
 
@@ -33,9 +35,49 @@ LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "90"))
 
 # Upload configuration
 WANO_UPLOAD_DIR = os.environ.get("WANO_UPLOAD_DIR", "/home/wano/cenniki")
-WANO_PDF_OUTPUT_DIR = os.environ.get("WANO_PDF_OUTPUT_DIR", "/home/wano/cennikiPDF")
+WANO_PDF_OUTPUT_PL_DIR = os.environ.get("WANO_PDF_OUTPUT_PL_DIR", "/home/wano/cennikiPDF-PL")
+WANO_PDF_OUTPUT_EN_DIR = os.environ.get("WANO_PDF_OUTPUT_EN_DIR", "/home/wano/cennikiPDF-EN")
 WANO_PDFY_DIR = os.environ.get("WANO_PDFY_DIR", "/home/wano/pdfy")
 WANO_EX_DIR = os.environ.get("WANO_EX_DIR", "/home/wano/ex")
+WANO_META_FILE = os.path.join(WANO_UPLOAD_DIR, ".wano_meta.json")
+
+# Postęp generacji (proste, per język)
+_progress_lock = threading.Lock()
+_progress: dict[str, dict] = {}
+_meta_lock = threading.Lock()
+
+
+def _set_progress(language: str, stage: str, percent: int, message: str = ""):
+    with _progress_lock:
+        _progress[language] = {
+            "stage": stage,
+            "percent": int(max(0, min(100, percent))),
+            "message": message,
+            "updated": datetime.utcnow().isoformat(),
+        }
+
+
+def _get_progress(language: str) -> dict:
+    with _progress_lock:
+        return _progress.get(language, {"stage": "idle", "percent": 0, "message": ""})
+
+
+def _load_meta() -> dict:
+    with _meta_lock:
+        try:
+            with open(WANO_META_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            return {}
+
+
+def _save_meta(meta: dict):
+    os.makedirs(WANO_UPLOAD_DIR, exist_ok=True)
+    with _meta_lock:
+        with open(WANO_META_FILE, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
 
 
 def _find_latest_file(directory: str, exts: set[str]) -> Optional[str]:
@@ -57,6 +99,10 @@ def _find_latest_file(directory: str, exts: set[str]) -> Optional[str]:
     return latest_file
 
 
+def _get_pdf_output_dir(language: str) -> str:
+    return WANO_PDF_OUTPUT_PL_DIR if language == "pl" else WANO_PDF_OUTPUT_EN_DIR
+
+
 class Message(BaseModel):
     text: str
 
@@ -68,6 +114,11 @@ class SleepLessonRequest(BaseModel):
     questions: List[str]
     answers: List[str] = Field(default_factory=list)
     language: str = "en"
+
+
+class FileInfoUpdate(BaseModel):
+    filename: str
+    info: str = ""
 
 
 def call_llm(prompt: str, model: str, temperature: float = 0.5) -> str:
@@ -205,13 +256,18 @@ async def generate_wano_pdf(language: str):
         raise HTTPException(status_code=400, detail="Brak źródłowego pliku cennika w /home/wano/cenniki.")
 
     try:
-        output = await asyncio.to_thread(generate_price_list, language, latest_excel)
-        download_href = f"/api/wano/download/pdf/{os.path.basename(output)}"
+        _set_progress(language, "start", 1, "Start")
+        cb = lambda stage, pct, msg: _set_progress(language, stage, pct, msg)
+        output = await asyncio.to_thread(generate_price_list, language, latest_excel, cb)
+        _set_progress(language, "done", 100, "Gotowe")
+        download_href = f"/api/wano/download/pdf/{language}/{os.path.basename(output)}"
         return {"message": "PDF wygenerowany", "output": output, "language": language, "download": download_href}
     except GenerationError as exc:
+        _set_progress(language, "error", 100, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - defensive
         logging.error("WANO generation error: %s", exc, exc_info=True)
+        _set_progress(language, "error", 100, "Błąd generowania.")
         raise HTTPException(status_code=500, detail="Błąd generowania cennika.")
 
 
@@ -289,6 +345,7 @@ async def list_wano_files():
         return {"files": []}
 
     files = []
+    meta = _load_meta()
     for name in os.listdir(WANO_UPLOAD_DIR):
         safe_name = os.path.basename(name)
         ext = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
@@ -298,10 +355,14 @@ async def list_wano_files():
         if not os.path.isfile(path):
             continue
         mtime = datetime.fromtimestamp(os.path.getmtime(path))
+        if safe_name in meta:
+            info_value = meta.get(safe_name, "")
+        else:
+            info_value = "Wersja z dysku"
         files.append(
             {
                 "file": safe_name,
-                "info": "Wersja z dysku",
+                "info": info_value,
                 "date": mtime.strftime("%Y-%m-%d %H:%M"),
                 "href": f"/api/wano/download/{safe_name}",
             }
@@ -311,29 +372,17 @@ async def list_wano_files():
     return {"files": files}
 
 
-def _is_lang_pdf(name: str, lang: str) -> bool:
-    lower = name.lower()
-    if not lower.endswith(".pdf"):
-        return False
-    if lang == "pl":
-        if "en" in lower or "price" in lower:
-            return False
-        return ("pl" in lower) or ("cennik" in lower)
-    if lang == "en":
-        return ("en" in lower) or ("price" in lower)
-    return False
-
-
 def _latest_pdf(lang: str) -> Optional[dict]:
-    if not os.path.exists(WANO_PDF_OUTPUT_DIR):
+    directory = _get_pdf_output_dir(lang)
+    if not os.path.exists(directory):
         return None
     latest = None
     latest_mtime = -1
 
-    for name in os.listdir(WANO_PDF_OUTPUT_DIR):
-        if not _is_lang_pdf(name, lang):
+    for name in os.listdir(directory):
+        if not name.lower().endswith(".pdf"):
             continue
-        path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, name))
+        path = os.path.abspath(os.path.join(directory, name))
         if not os.path.isfile(path):
             continue
         mtime = os.path.getmtime(path)
@@ -341,7 +390,7 @@ def _latest_pdf(lang: str) -> Optional[dict]:
             latest_mtime = mtime
             latest = {
                 "file": name,
-                "href": f"/api/wano/download/pdf/{name}",
+                "href": f"/api/wano/download/pdf/{lang}/{name}",
                 "date": datetime.fromtimestamp(mtime).strftime("%d.%m.%Y"),
             }
     return latest
@@ -352,12 +401,16 @@ async def get_latest_pdfs():
     return {"pl": _latest_pdf("pl"), "en": _latest_pdf("en")}
 
 
-@app.get("/api/wano/download/pdf/{filename}")
-async def download_pdf(filename: str):
+@app.get("/api/wano/download/pdf/{language}/{filename}")
+async def download_pdf(language: str, filename: str):
+    language = language.lower()
+    if language not in {"pl", "en"}:
+        raise HTTPException(status_code=400, detail="Język musi być pl albo en.")
     safe_name = os.path.basename(filename)
-    file_path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, safe_name))
+    directory = _get_pdf_output_dir(language)
+    file_path = os.path.abspath(os.path.join(directory, safe_name))
 
-    if not file_path.startswith(os.path.abspath(WANO_PDF_OUTPUT_DIR) + os.sep):
+    if not file_path.startswith(os.path.abspath(directory) + os.sep):
         raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Plik nie istnieje.")
@@ -373,6 +426,28 @@ async def download_latest_pdf(language: str):
     latest = _latest_pdf(language)
     if not latest:
         raise HTTPException(status_code=404, detail="Brak wygenerowanego pliku.")
-    safe_name = os.path.basename(latest["file"])
-    file_path = os.path.abspath(os.path.join(WANO_PDF_OUTPUT_DIR, safe_name))
-    return FileResponse(file_path, filename=safe_name)
+    return await download_pdf(language, latest["file"])
+
+
+@app.get("/api/wano/progress/{language}")
+async def get_wano_progress(language: str):
+    language = language.lower()
+    if language not in {"pl", "en"}:
+        raise HTTPException(status_code=400, detail="Język musi być pl albo en.")
+    data = _get_progress(language)
+    return data
+
+
+@app.post("/api/wano/info")
+async def set_wano_file_info(payload: FileInfoUpdate):
+    safe_name = os.path.basename(payload.filename)
+    file_path = os.path.abspath(os.path.join(WANO_UPLOAD_DIR, safe_name))
+    if not file_path.startswith(os.path.abspath(WANO_UPLOAD_DIR) + os.sep):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Plik nie istnieje.")
+
+    meta = _load_meta()
+    meta[safe_name] = payload.info or ""
+    _save_meta(meta)
+    return {"message": "Info zapisane", "file": safe_name, "info": payload.info or ""}

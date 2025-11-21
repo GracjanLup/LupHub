@@ -10,7 +10,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
         <link rel="stylesheet" href="/static/assets/css/main.css" />
-        <link rel="stylesheet" href="/static/assets/css/wano.css?v=2" />
+        <link rel="stylesheet" href="/static/assets/css/wano.css?v=3" />
         <noscript><link rel="stylesheet" href="/static/assets/css/noscript.css" /></noscript>
     </head>
     <body class="is-preload">
@@ -30,18 +30,20 @@
                                     <p>Tutaj możesz pobrać najnowszą wersję cennika, wygenerować PDF w dwóch językach i pobrać starsze wersje cennika.</p>
                                 </header>
 
-                                <div class="wano-panel">
+                                <div class="wano-panel">    
                                     <div class="wano-controls">
                                         <button class="wano-btn" data-lang="pl" id="generate-pl">Wygeneruj Cennik PL</button>
                                         <button class="wano-btn" data-lang="en" id="generate-en">Wygeneruj Cennik EN</button>
                                     </div>
-
                                     <div class="wano-status" id="wano-status">Gotowy do działania.</div>
-                                    <div class="wano-progress" id="wano-progress" hidden>
+                                    <div class="wano-progress" id="wano-progress-generate" hidden>
                                         <div class="wano-progress-bar">
-                                            <div class="wano-progress-fill" id="wano-progress-fill"></div>
+                                            <div class="wano-progress-fill" id="wano-progress-generate-fill"></div>
                                         </div>
-                                        <div class="wano-progress-text" id="wano-progress-text">0%</div>
+                                        <div class="wano-progress-text">
+                                            <span id="wano-progress-generate-text">0%</span>
+                                            <span id="wano-progress-generate-timer" class="wano-progress-timer">--:--</span>
+                                        </div>
                                     </div>
 
                                     <div class="wano-downloads">
@@ -53,6 +55,19 @@
                                         <input type="file" id="wano-file-input" accept=".xlsm,.xlsx" hidden />
                                         <p class="wano-drop-title">Wstaw nowy cennik .xlsm/.xlsx</p>
                                         <p class="wano-drop-sub">Przeciągnij i upuść plik lub kliknij, aby wybrać.</p>
+                                    </div>
+                                    <div class="wano-info-form" id="wano-info-form" hidden>
+                                        <p class="wano-drop-title">Dodaj opis do wgranego pliku</p>
+                                        <p id="wano-info-filename" class="wano-drop-sub"></p>
+                                        <label for="wano-info-input">Info:</label>
+                                        <input type="text" id="wano-info-input" maxlength="200" />
+                                        <button class="wano-btn" id="wano-info-submit">Zatwierdź</button>
+                                    </div>
+                                    <div class="wano-progress" id="wano-progress-upload" hidden>
+                                        <div class="wano-progress-bar">
+                                            <div class="wano-progress-fill" id="wano-progress-upload-fill"></div>
+                                        </div>
+                                        <div class="wano-progress-text" id="wano-progress-upload-text">0%</div>
                                     </div>
 
                                     <p class="wano-versions-title">Wszystkie wersje cennika (program generuje PDFy na bazie ostatnio wstawionej wersji):</p>
@@ -78,7 +93,7 @@
 
                 <!-- Copyright -->
                     <div id="copyright">
-                        <ul><li>&copy; Untitled</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
+                        <ul><li>&copy; Luphub</li><li>Design: <a href="https://html5up.net">HTML5 UP</a></li></ul>
                     </div>
 
             </div>
@@ -91,6 +106,6 @@
             <script src="/static/assets/js/breakpoints.min.js"></script>
             <script src="/static/assets/js/util.js"></script>
             <script src="/static/assets/js/main.js"></script>
-            <script src="/static/assets/js/wano.js?v=2"></script>
+            <script src="/static/assets/js/wano.js?v=3"></script>
     </body>
 </html>
