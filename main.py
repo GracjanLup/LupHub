@@ -5,6 +5,8 @@ import re
 import json
 import threading
 from datetime import datetime
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import List, Optional
 
 import requests
@@ -14,10 +16,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
-from static.assets.CreatorAPI import GenerationError, generate_price_list
+# Dynamic import to support the renamed PDF-generation.py module
+_PDF_MODULE_PATH = Path(__file__).resolve().parent / "static" / "assets" / "PDF-generation.py"
+_pdf_spec = spec_from_file_location("pdf_generation", _PDF_MODULE_PATH)
+if _pdf_spec is None or _pdf_spec.loader is None:
+    raise RuntimeError(f"Nie można wczytać modułu generatora PDF: {_PDF_MODULE_PATH}")
+_pdf_module = module_from_spec(_pdf_spec)
+_pdf_spec.loader.exec_module(_pdf_module)
+
+GenerationError = _pdf_module.GenerationError
+GenerationCancelled = getattr(_pdf_module, "GenerationCancelled", GenerationError)
+generate_price_list = _pdf_module.generate_price_list
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -45,6 +58,8 @@ WANO_META_FILE = os.path.join(WANO_UPLOAD_DIR, ".wano_meta.json")
 _progress_lock = threading.Lock()
 _progress: dict[str, dict] = {}
 _meta_lock = threading.Lock()
+_generation_lock = threading.Lock()
+_generation_jobs: dict[str, dict] = {}
 
 
 def _set_progress(language: str, stage: str, percent: int, message: str = ""):
@@ -78,6 +93,68 @@ def _save_meta(meta: dict):
     with _meta_lock:
         with open(WANO_META_FILE, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
+
+
+def _start_generation_job(language: str) -> dict:
+    language = language.lower()
+    if language not in {"pl", "en"}:
+        raise HTTPException(status_code=400, detail="Język musi być pl albo en.")
+    with _generation_lock:
+        if language in _generation_jobs:
+            raise HTTPException(status_code=409, detail=f"Generowanie {language.upper()} już trwa.")
+        job = {"cancel": threading.Event()}
+        _generation_jobs[language] = job
+        return job
+
+
+def _finish_generation_job(language: str):
+    language = language.lower()
+    with _generation_lock:
+        _generation_jobs.pop(language, None)
+
+
+def _cancel_generation_job(language: str, reason: str = "Przerwano generowanie.") -> bool:
+    language = language.lower()
+    if language not in {"pl", "en"}:
+        return False
+
+    cancelled = False
+    with _generation_lock:
+        job = _generation_jobs.get(language)
+        if job:
+            job["cancel"].set()
+            cancelled = True
+
+    if cancelled:
+        _set_progress(language, "cancelled", 100, reason)
+    else:
+        _set_progress(language, "idle", 0, "")
+    return cancelled
+
+
+def _cleanup_after_cancel(language: str):
+    language = language.lower()
+    token = "PL" if language == "pl" else "EN"
+    export_dir = Path(getattr(_pdf_module, "EXPORT_DIR", WANO_EX_DIR))
+    for pdf_path in export_dir.glob(f"*{token}ex.pdf"):
+        try:
+            pdf_path.unlink(missing_ok=True)
+        except TypeError:
+            # Python < 3.8 compatibility: missing_ok not available
+            try:
+                pdf_path.unlink()
+            except FileNotFoundError:
+                pass
+        except Exception as exc:
+            logger.warning("Nie udało się usunąć %s: %s", pdf_path, exc)
+
+    output_attr = "OUTPUT_FILE_PL" if language == "pl" else "OUTPUT_FILE_EN"
+    output_path = Path(getattr(_pdf_module, output_attr, ""))
+    if output_path and output_path.exists():
+        try:
+            output_path.unlink()
+        except Exception as exc:
+            logger.warning("Nie udało się usunąć wyniku %s: %s", output_path, exc)
 
 
 def _find_latest_file(directory: str, exts: set[str]) -> Optional[str]:
@@ -119,6 +196,11 @@ class SleepLessonRequest(BaseModel):
 class FileInfoUpdate(BaseModel):
     filename: str
     info: str = ""
+
+
+class CancelRequest(BaseModel):
+    language: Optional[str] = None
+    reason: Optional[str] = None
 
 
 def call_llm(prompt: str, model: str, temperature: float = 0.5) -> str:
@@ -251,17 +333,34 @@ async def generate_sleep_lesson(payload: SleepLessonRequest):
 
 @app.post("/api/wano/generate/{language}")
 async def generate_wano_pdf(language: str):
+    language = language.lower()
     latest_excel = _find_latest_file(WANO_UPLOAD_DIR, {"xlsm", "xlsx"})
     if not latest_excel:
         raise HTTPException(status_code=400, detail="Brak źródłowego pliku cennika w /home/wano/cenniki.")
 
+    job = _start_generation_job(language)
+    cancel_event = job["cancel"]
+
     try:
         _set_progress(language, "start", 1, "Start")
-        cb = lambda stage, pct, msg: _set_progress(language, stage, pct, msg)
-        output = await asyncio.to_thread(generate_price_list, language, latest_excel, cb)
+
+        def progress_cb(stage: str, pct: int, msg: str):
+            _set_progress(language, stage, pct, msg)
+
+        output = await asyncio.to_thread(
+            generate_price_list,
+            language,
+            latest_excel,
+            progress_cb,
+            cancel_event,
+        )
         _set_progress(language, "done", 100, "Gotowe")
         download_href = f"/api/wano/download/pdf/{language}/{os.path.basename(output)}"
         return {"message": "PDF wygenerowany", "output": output, "language": language, "download": download_href}
+    except GenerationCancelled as exc:
+        _cleanup_after_cancel(language)
+        message = str(exc) or "Generowanie przerwane."
+        raise HTTPException(status_code=400, detail=message)
     except GenerationError as exc:
         _set_progress(language, "error", 100, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -269,6 +368,23 @@ async def generate_wano_pdf(language: str):
         logging.error("WANO generation error: %s", exc, exc_info=True)
         _set_progress(language, "error", 100, "Błąd generowania.")
         raise HTTPException(status_code=500, detail="Błąd generowania cennika.")
+    finally:
+        _finish_generation_job(language)
+
+
+@app.post("/api/wano/cancel")
+async def cancel_wano_generation(payload: CancelRequest):
+    language = (payload.language or "").lower()
+    reason = payload.reason or "Generowanie przerwane."
+
+    if language in {"pl", "en"}:
+        cancelled = _cancel_generation_job(language, reason)
+        return {"language": language, "cancelled": cancelled}
+
+    cancelled_any = False
+    for lang in ("pl", "en"):
+        cancelled_any = _cancel_generation_job(lang, reason) or cancelled_any
+    return {"language": "all", "cancelled": cancelled_any}
 
 
 @app.post("/api/wano/upload")

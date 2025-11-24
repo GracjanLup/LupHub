@@ -4,7 +4,8 @@ import re
 import shutil
 import subprocess
 import tempfile
-from typing import Iterable, List, Optional
+import threading
+from typing import Callable, Iterable, List, Optional
 
 from PyPDF2 import PdfMerger
 
@@ -29,6 +30,15 @@ class GenerationError(Exception):
     """Raised when PDF generation cannot be completed."""
 
 
+class GenerationCancelled(GenerationError):
+    """Raised when generation was cancelled by user."""
+
+
+def _check_cancel(cancel_event: Optional[threading.Event], message: str = "Generowanie przerwane."):
+    if cancel_event and cancel_event.is_set():
+        raise GenerationCancelled(message)
+
+
 def _validate_assets(language_token: str, excel_path: Optional[str] = None):
     source_excel = os.path.abspath(excel_path or EXCEL_PATH)
     if not os.path.exists(source_excel):
@@ -43,11 +53,13 @@ def _validate_assets(language_token: str, excel_path: Optional[str] = None):
             raise GenerationError(f"Brak wymaganych plików PDF: {path}")
 
 
-def _merge_pdf_list(paths: Iterable[str], output_file: str) -> str:
+def _merge_pdf_list(paths: Iterable[str], output_file: str, cancel_event: Optional[threading.Event] = None) -> str:
+    _check_cancel(cancel_event)
     os.makedirs(os.path.dirname(os.path.abspath(output_file)) or ".", exist_ok=True)
     merger = PdfMerger()
     try:
         for p in paths:
+            _check_cancel(cancel_event)
             merger.append(os.path.abspath(p))
         merger.write(output_file)
         logger.info("Zapisano PDF: %s", output_file)
@@ -77,7 +89,10 @@ def _find_soffice_binary() -> str:
     )
 
 
-def _convert_excel_to_pdf(excel_path: str, dest_dir: str) -> str:
+def _convert_excel_to_pdf(
+    excel_path: str, dest_dir: str, cancel_event: Optional[threading.Event] = None
+) -> str:
+    _check_cancel(cancel_event)
     os.makedirs(dest_dir, exist_ok=True)
     excel_abs = os.path.abspath(excel_path)
     out_name = os.path.splitext(os.path.basename(excel_abs))[0] + ".pdf"
@@ -110,19 +125,40 @@ def _convert_excel_to_pdf(excel_path: str, dest_dir: str) -> str:
     env["PATH"] = ":".join(env_paths)
     env["HOME"] = env.get("HOME", "/tmp")
 
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    stdout = b""
+    stderr = b""
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-    except subprocess.CalledProcessError as exc:
-        stderr_msg = exc.stderr.decode(errors="ignore") if exc.stderr else str(exc)
-        raise GenerationError(f"Konwersja przez libreoffice nie powiodła się: {stderr_msg}") from exc
+        while True:
+            try:
+                stdout, stderr = proc.communicate(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                _check_cancel(cancel_event)
+                continue
+    except GenerationCancelled:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
 
+    if proc.returncode != 0:
+        stderr_msg = stderr.decode(errors="ignore") if stderr else stdout.decode(errors="ignore")
+        raise GenerationError(f"Konwersja przez libreoffice nie powiodła się: {stderr_msg}")
+
+    _check_cancel(cancel_event)
     if not os.path.exists(out_path):
         raise GenerationError(f"Nie znaleziono wyjściowego PDF: {out_path}")
     return out_path
 
 
-def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Optional[str]:
+def _export_sheet_uno(
+    excel_path: str, sheet_name: str, target_pdf: str, cancel_event: Optional[threading.Event] = None
+) -> Optional[str]:
     """Eksport arkusza przez UNO, usuwając inne arkusze i zachowując grafiki."""
+    _check_cancel(cancel_event)
     try:
         import uno
         import unohelper
@@ -132,6 +168,7 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
         return None
 
     soffice = _find_soffice_binary()
+    _check_cancel(cancel_event)
     os.makedirs(os.path.dirname(os.path.abspath(target_pdf)) or ".", exist_ok=True)
     tmp_profile = tempfile.mkdtemp(prefix="lo-profile-")
     office_cmd = [
@@ -153,6 +190,7 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
     ctx = None
     for _ in range(40):
         try:
+            _check_cancel(cancel_event)
             ctx = _connect()
             break
         except Exception:
@@ -168,6 +206,7 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
 
     source_url = unohelper.systemPathToFileUrl(os.path.abspath(excel_path))
     load_props = (PropertyValue("Hidden", 0, True, 0),)
+    _check_cancel(cancel_event)
     doc = desktop.loadComponentFromURL(source_url, "_blank", 0, load_props)
     if doc is None:
         desktop.terminate()
@@ -176,11 +215,13 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
 
     single_path = None
     try:
+        _check_cancel(cancel_event)
         sheets = doc.Sheets
         if not sheets.hasByName(sheet_name):
             return None
         # Usuń wszystkie arkusze poza docelowym
         for name in list(sheets.ElementNames):
+            _check_cancel(cancel_event)
             if name != sheet_name:
                 try:
                     sheets.removeByName(name)
@@ -221,7 +262,7 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
     # Konwersja tej kopii do PDF (cały workbook ma już jeden arkusz)
     if single_path:
         try:
-            pdf_generated = _convert_excel_to_pdf(single_path, os.path.dirname(target_pdf))
+            pdf_generated = _convert_excel_to_pdf(single_path, os.path.dirname(target_pdf), cancel_event)
             if os.path.exists(pdf_generated):
                 shutil.move(pdf_generated, target_pdf)
                 return target_pdf
@@ -231,7 +272,13 @@ def _export_sheet_uno(excel_path: str, sheet_name: str, target_pdf: str) -> Opti
 
 
 
-def _export_sheets(language_token: str, excel_path: Optional[str] = None, progress_cb=None) -> List[str]:
+def _export_sheets(
+    language_token: str,
+    excel_path: Optional[str] = None,
+    progress_cb=None,
+    cancel_event: Optional[threading.Event] = None,
+    register_cleanup: Optional[Callable[[str], None]] = None,
+) -> List[str]:
     if load_workbook is None:
         raise GenerationError("Brak biblioteki openpyxl. Zainstaluj ją w venv (`pip install openpyxl`).")
 
@@ -254,13 +301,13 @@ def _export_sheets(language_token: str, excel_path: Optional[str] = None, progre
     if not matched_sheets:
         raise GenerationError(f"Nie znaleziono arkuszy pasujących do wzorca *{language_token} w skoroszycie.")
 
-    # Sortuj rosnąco po prefiksie numerycznym, aby zachować kolejność 2,3,4...
     matched_sheets.sort(key=lambda item: int(re.match(r"(\d+)", item[0]).group(1)))
 
     total = len(matched_sheets)
     with tempfile.TemporaryDirectory() as temp_dir:
         exported_prefixes: List[str] = []
         for idx, (prefix, sheet_name) in enumerate(matched_sheets, start=1):
+            _check_cancel(cancel_event)
             layout_pdf = os.path.join(PDFY_DIR, f"{prefix}.pdf")
             num_prefix = int(re.match(r"(\d+)", prefix).group(1))
             layout_required = num_prefix != 1
@@ -272,23 +319,31 @@ def _export_sheets(language_token: str, excel_path: Optional[str] = None, progre
             if not layout_required and not os.path.exists(layout_pdf):
                 logger.info("Używam Start%s jako layout dla %s", language_token, sheet_name)
 
-            # Najpierw spróbuj UNO (pełny arkusz z grafikami).
-            pdf_path = _export_sheet_uno(source_excel, sheet_name, os.path.join(temp_dir, f"{prefix}ex.pdf"))
+            temp_pdf_path = os.path.join(temp_dir, f"{prefix}ex.pdf")
+            pdf_path = _export_sheet_uno(
+                source_excel,
+                sheet_name,
+                temp_pdf_path,
+                cancel_event=cancel_event,
+            )
             if pdf_path is None:
-                # fallback: wycinek openpyxl
+                _check_cancel(cancel_event)
                 temp_wb = load_workbook(source_excel, keep_vba=True)
                 if sheet_name not in temp_wb.sheetnames:
                     continue
                 for other in list(temp_wb.sheetnames):
+                    _check_cancel(cancel_event)
                     if other != sheet_name:
                         temp_wb.remove(temp_wb[other])
                 temp_wb.active = temp_wb[sheet_name]
                 temp_excel_path = os.path.join(temp_dir, f"{prefix}.xlsm")
                 temp_wb.save(temp_excel_path)
-                pdf_path = _convert_excel_to_pdf(temp_excel_path, temp_dir)
+                pdf_path = _convert_excel_to_pdf(temp_excel_path, temp_dir, cancel_event)
 
             final_pdf = os.path.join(EXPORT_DIR, f"{prefix}ex.pdf")
             shutil.move(pdf_path, final_pdf)
+            if register_cleanup:
+                register_cleanup(final_pdf)
 
             exported_prefixes.append(prefix)
             if progress_cb:
@@ -302,7 +357,13 @@ def _export_sheets(language_token: str, excel_path: Optional[str] = None, progre
     return exported_prefixes
 
 
-def generate_price_list(language: str, excel_path: Optional[str] = None, progress_cb=None) -> str:
+def generate_price_list(
+    language: str,
+    excel_path: Optional[str] = None,
+    progress_cb=None,
+    cancel_event: Optional[threading.Event] = None,
+    register_cleanup: Optional[Callable[[str], None]] = None,
+) -> str:
     """Generuje cennik PDF (Linux, libreoffice).
 
     progress_cb(stage, percent, message) — opcjonalny callback do raportowania postępu.
@@ -314,19 +375,29 @@ def generate_price_list(language: str, excel_path: Optional[str] = None, progres
     token = "PL" if language == "pl" else "EN"
     output_file = OUTPUT_FILE_PL if language == "pl" else OUTPUT_FILE_EN
 
+    _check_cancel(cancel_event)
     if progress_cb:
         progress_cb("start", 5, "Start generowania")
 
     _validate_assets(token, excel_path)
+    _check_cancel(cancel_event)
 
     if progress_cb:
         progress_cb("export", 10, "Eksport arkuszy")
-    prefixes = _export_sheets(token, excel_path, progress_cb)
+    prefixes = _export_sheets(
+        token,
+        excel_path,
+        progress_cb,
+        cancel_event=cancel_event,
+        register_cleanup=register_cleanup,
+    )
 
+    _check_cancel(cancel_event)
     if progress_cb:
         progress_cb("merge", 92, "Scalanie PDF")
     parts = [os.path.join(PDFY_DIR, f"Start{token}.pdf")]
     for prefix in prefixes:
+        _check_cancel(cancel_event)
         sheet_pdf = os.path.join(EXPORT_DIR, f"{prefix}ex.pdf")
         layout_pdf = os.path.join(PDFY_DIR, f"{prefix}.pdf")
         if not os.path.exists(sheet_pdf):
@@ -344,7 +415,9 @@ def generate_price_list(language: str, excel_path: Optional[str] = None, progres
 
     target_dir = OUTPUT_DIR_PL if language == "pl" else OUTPUT_DIR_EN
     os.makedirs(target_dir, exist_ok=True)
-    result = _merge_pdf_list(parts, output_file)
+    result = _merge_pdf_list(parts, output_file, cancel_event=cancel_event)
+    if register_cleanup:
+        register_cleanup(result)
     if progress_cb:
         progress_cb("done", 100, "Gotowe")
     return result

@@ -13,6 +13,8 @@
     const genProgressFill = document.getElementById("wano-progress-generate-fill");
     const genProgressText = document.getElementById("wano-progress-generate-text");
     const genProgressTimerText = document.getElementById("wano-progress-generate-timer");
+    const cancelWrap = document.getElementById("wano-cancel-wrapper");
+    const cancelBtn = document.getElementById("wano-cancel-btn");
     const uploadProgressWrap = document.getElementById("wano-progress-upload");
     const uploadProgressFill = document.getElementById("wano-progress-upload-fill");
     const uploadProgressText = document.getElementById("wano-progress-upload-text");
@@ -26,29 +28,31 @@
 
     let versions = [];
     let latestPdfs = { pl: null, en: null };
-    const GEN_FAST_TARGET = 10;
-    const GEN_FAST_STEP = 1;
-    const GEN_FAST_INTERVAL = 400;
-    const GEN_SLOW_STEP = 1;
-    const GEN_SLOW_INTERVAL = 2750;
-    const GEN_SLOW_CAP = 99;
-    const BASE_TOTAL_MS = 210000; // 3 min 30 s
-    const MAX_TOTAL_MS = 600000; // 10 min max
-    const MILESTONES = [25, 50, 75];
+    const GEN_PROGRESS_INTERVAL = 2500; // 2.5 s na 1%
+    const GEN_PROGRESS_MAX = 99;
+    const GEN_TOTAL_MS = 250000; // 4 min 10 s
+    const STAGE_PRIORITY = { start: 0, export: 1, merge: 2, done: 3, error: 4 };
+    const STAGE_TEXT = {
+        start: "Przygotowanie pliku...",
+        export: "Eksport arkuszy...",
+        merge: "Scalanie PDF...",
+        done: "Finalizowanie PDF...",
+    };
     let progressPoller = null;
     const PROGRESS_POLL_INTERVAL = 2500;
     let genProgressTimer = null;
     let genProgressValue = 0;
-    let genSlowPhase = false;
     let currentGenLanguage = null;
     let generationActive = false;
     let genStartTime = null;
     let genTimerInterval = null;
-    let genTotalMs = BASE_TOTAL_MS;
-    let nextMilestoneIdx = 0;
     let uploadedFilename = null;
     let pendingInfoText = null;
     let uploadInProgress = false;
+    let cancelRequested = false;
+    let cancelInFlight = false;
+    let lastProgressPriority = -1;
+    let progressStartMarker = 0;
 
     function formatDate(d = new Date()) {
         const pad = (v) => String(v).padStart(2, "0");
@@ -87,7 +91,6 @@
         wrapper.hidden = false;
         if (fill) fill.style.width = `${percent}%`;
         if (text) text.textContent = `${percent}%`;
-        if (genProgressTimerText) genProgressTimerText.textContent = formatDuration(genTotalMs);
     }
 
     function updateProgressBar(fill, text, percent) {
@@ -100,36 +103,18 @@
         if (wrapper) wrapper.hidden = true;
     }
 
-    function startSlowGenPhase() {
-        clearInterval(genProgressTimer);
-        genProgressTimer = setInterval(() => {
-            if (genProgressValue >= GEN_SLOW_CAP) return;
-            genProgressValue = Math.min(GEN_SLOW_CAP, genProgressValue + GEN_SLOW_STEP);
-            updateProgressBar(genProgressFill, genProgressText, genProgressValue);
-        }, GEN_SLOW_INTERVAL);
-    }
-
     function startGenProgress() {
         if (!genProgressWrap) return;
         clearInterval(genProgressTimer);
-        genSlowPhase = false;
         genProgressValue = 1; // start od 1%, żeby pasek ruszył od razu
+        lastProgressPriority = -1;
+        progressStartMarker = Date.now();
         showProgress(genProgressWrap, genProgressFill, genProgressText, genProgressValue);
         genProgressTimer = setInterval(() => {
-            if (genProgressValue >= GEN_FAST_TARGET) {
-                if (!genSlowPhase) {
-                    genSlowPhase = true;
-                    startSlowGenPhase();
-                }
-                return;
-            }
-            genProgressValue = Math.min(GEN_FAST_TARGET, genProgressValue + GEN_FAST_STEP);
+            if (genProgressValue >= GEN_PROGRESS_MAX) return;
+            genProgressValue = Math.min(GEN_PROGRESS_MAX, genProgressValue + 1);
             updateProgressBar(genProgressFill, genProgressText, genProgressValue);
-            if (genProgressValue >= GEN_FAST_TARGET) {
-                genSlowPhase = true;
-                startSlowGenPhase();
-            }
-        }, GEN_FAST_INTERVAL);
+        }, GEN_PROGRESS_INTERVAL);
     }
 
     function finishGenProgress() {
@@ -166,78 +151,54 @@
             return;
         }
         const elapsed = genStartTime ? Date.now() - genStartTime : 0;
-        const remainingMs = forceMs !== null ? forceMs : Math.max(0, genTotalMs - elapsed);
+        const remainingMs = forceMs !== null ? forceMs : Math.max(0, GEN_TOTAL_MS - elapsed);
         genProgressTimerText.textContent = formatDuration(remainingMs);
-    }
-
-    function maybeAdjustTotal(percent) {
-        if (nextMilestoneIdx >= MILESTONES.length) return;
-        const milestone = MILESTONES[nextMilestoneIdx];
-        if (percent < milestone) return;
-        const elapsed = genStartTime ? Date.now() - genStartTime : 0;
-        const estTotal = Math.min(MAX_TOTAL_MS, Math.max(genTotalMs, (elapsed * 100) / Math.max(percent, 1)));
-        if (estTotal > genTotalMs) {
-            genTotalMs = estTotal;
-        }
-        nextMilestoneIdx += 1;
     }
 
     function startGenTimer() {
         genStartTime = Date.now();
-        genTotalMs = BASE_TOTAL_MS;
-        nextMilestoneIdx = 0;
         updateGenTimer();
         if (genTimerInterval) clearInterval(genTimerInterval);
         genTimerInterval = setInterval(() => updateGenTimer(), 1000);
     }
 
     function applyProgressPayload(payload, language) {
-        const stage = payload.stage || "idle";
-        const rawPercent = typeof payload.percent === "number" ? payload.percent : 0;
-        const message = payload.message || "";
-        if (generationActive && language === currentGenLanguage && stage === "idle") {
-            // Nie nadpisuj podczas trwającej generacji pustym stanem
+        const stage = (payload.stage || "idle").toLowerCase();
+        if (!generationActive || language !== currentGenLanguage || stage === "idle") {
             return;
         }
-        const stageLabel = {
-            start: "Start",
-            export: "Eksport arkuszy",
-            merge: "Scalanie PDF",
-            done: "Zakończono",
-            error: "Błąd",
-            idle: "Oczekiwanie",
-        }[stage] || stage;
+        if (progressStartMarker) {
+            const updatedTs = Date.parse(payload.updated || "");
+            if (updatedTs && updatedTs + 1000 < progressStartMarker) {
+                return;
+            }
+        }
 
-        const percent =
-            stage === "done" || stage === "error"
-                ? Math.max(rawPercent, 100)
-                : Math.min(GEN_SLOW_CAP, Math.max(genProgressValue, rawPercent));
-        showProgress(genProgressWrap, genProgressFill, genProgressText, percent);
-        genProgressValue = percent;
-        updateProgressBar(genProgressFill, genProgressText, percent);
-        maybeAdjustTotal(percent);
-        updateGenTimer();
+        const priority = STAGE_PRIORITY[stage] ?? -1;
+        if (priority >= 0 && priority < lastProgressPriority && stage !== "error") {
+            return;
+        }
+        if (priority > lastProgressPriority) {
+            lastProgressPriority = priority;
+        }
+
+        if (stage === "error") {
+            stopProgressPolling();
+            setStatus(`❌ ${payload.message || "Błąd generowania."}`, "error");
+            return;
+        }
 
         if (stage === "done") {
+            stopProgressPolling();
+            setStatus(`${language.toUpperCase()}: ${STAGE_TEXT.done}`);
             finishGenProgress();
-            stopProgressPolling();
-            setStatus(`✅ ${message || "Gotowe"}`);
-            setLoading(false);
-            hideInfoForm();
-    loadVersions();
-            loadLatestPdfs();
-            generationActive = false;
-            currentGenLanguage = null;
-        } else if (stage === "error") {
-            stopProgressPolling();
-            setStatus(`❌ ${message || "Błąd generowania."}`, "error");
-            setLoading(false);
-            hideProgress(genProgressWrap);
-            generationActive = false;
-            currentGenLanguage = null;
-            updateGenTimer(0);
-        } else {
-            setStatus(`${language.toUpperCase()}: ${stageLabel}${message ? " – " + message : ""}`);
+            return;
+        }
+
+        const label = STAGE_TEXT[stage] || stage;
+        setStatus(`${language.toUpperCase()}: ${label}`);
+        if (genProgressWrap && genProgressWrap.hidden) {
+            showProgress(genProgressWrap, genProgressFill, genProgressText, genProgressValue || 1);
         }
     }
 
@@ -268,6 +229,14 @@
         dropzone?.classList.toggle("disabled", isLoading);
     }
 
+    function toggleCancelButton(visible) {
+        if (!cancelWrap) return;
+        cancelWrap.hidden = !visible;
+        if (cancelBtn) {
+            cancelBtn.disabled = cancelInFlight || !visible;
+        }
+    }
+
     function showInfoForm(fileName) {
         uploadedFilename = fileName;
         pendingInfoText = null;
@@ -285,6 +254,75 @@
         if (infoFilename) infoFilename.textContent = "";
     }
 
+    function resetGenerationUiState(options = {}) {
+        const { resetCancelFlags = false } = options;
+        stopProgressPolling();
+        clearInterval(genProgressTimer);
+        genProgressTimer = null;
+        genProgressValue = 0;
+        genStartTime = null;
+        progressStartMarker = 0;
+        hideProgress(genProgressWrap);
+        updateProgressBar(genProgressFill, genProgressText, 0);
+        if (genProgressTimerText) genProgressTimerText.textContent = "--:--";
+        setLoading(false);
+        generationActive = false;
+        currentGenLanguage = null;
+        toggleCancelButton(false);
+        hideInfoForm();
+        updateGenTimer(0);
+        lastProgressPriority = -1;
+        if (resetCancelFlags) {
+            cancelRequested = false;
+            cancelInFlight = false;
+        }
+    }
+
+    async function cancelGeneration(reason = "Generowanie przerwane.") {
+        if (!generationActive || cancelInFlight) return;
+        cancelRequested = true;
+        cancelInFlight = true;
+        setStatus("Przerywam generowanie...");
+        resetGenerationUiState();
+        try {
+            await fetch("/api/wano/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ language: currentGenLanguage, reason }),
+            });
+            setStatus("⏹️ Generowanie przerwane.");
+        } catch (error) {
+            console.error("Cancel error", error);
+            setStatus("❌ Nie udało się przerwać generowania.", "error");
+        } finally {
+            cancelInFlight = false;
+        }
+    }
+
+    async function resetServerGenerationState() {
+        try {
+            await fetch("/api/wano/cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: "Reset po odświeżeniu interfejsu" }),
+            });
+        } catch (err) {
+            console.warn("Reset cancel failed", err);
+        }
+    }
+
+    function sendCancelBeacon(language, reason) {
+        if (!navigator.sendBeacon) return false;
+        try {
+            const payload = JSON.stringify({ language, reason });
+            const blob = new Blob([payload], { type: "application/json" });
+            return navigator.sendBeacon("/api/wano/cancel", blob);
+        } catch (err) {
+            console.warn("sendBeacon cancel failed", err);
+            return false;
+        }
+    }
+
     async function triggerGeneration(language) {
         setLoading(true);
         setStatus(`Generuję cennik ${language.toUpperCase()}...`);
@@ -294,6 +332,9 @@
         generationActive = true;
         currentGenLanguage = language;
         startGenTimer();
+        cancelRequested = false;
+        cancelInFlight = false;
+        toggleCancelButton(true);
 
         try {
             const response = await fetch(`/api/wano/generate/${language}`, {
@@ -316,15 +357,26 @@
         } catch (error) {
             console.error(error);
             const message = error instanceof Error ? error.message : "Wystąpił błąd.";
-            setStatus(`❌ ${message}`, "error");
+            if (cancelRequested || message.toLowerCase().includes("przerwan")) {
+                setStatus(`⏹️ ${message}`);
+            } else {
+                setStatus(`❌ ${message}`, "error");
+            }
         } finally {
-            stopProgressPolling();
-            finishGenProgress();
-            setLoading(false);
-            generationActive = false;
-            currentGenLanguage = null;
-            updateGenTimer(0);
-            hideInfoForm();
+            if (cancelRequested) {
+                resetGenerationUiState({ resetCancelFlags: true });
+            } else {
+                stopProgressPolling();
+                finishGenProgress();
+                setLoading(false);
+                generationActive = false;
+                currentGenLanguage = null;
+                updateGenTimer(0);
+                hideInfoForm();
+                toggleCancelButton(false);
+                cancelRequested = false;
+                cancelInFlight = false;
+            }
         }
     }
 
@@ -453,6 +505,12 @@
 
     plBtn?.addEventListener("click", () => triggerGeneration("pl"));
     enBtn?.addEventListener("click", () => triggerGeneration("en"));
+    cancelBtn?.addEventListener("click", () => cancelGeneration("Generowanie przerwane przez użytkownika."));
+    window.addEventListener("beforeunload", () => {
+        if (generationActive && currentGenLanguage) {
+            sendCancelBeacon(currentGenLanguage, "Odświeżenie strony");
+        }
+    });
 
     dropzone?.addEventListener("click", () => fileInput?.click());
 
@@ -493,9 +551,7 @@
             renderTable(versions);
         } catch (error) {
             console.error(error);
-            const message = error instanceof Error ? error.message : "Błąd odczytu plików.";
-            setStatus(`❌ ${message}`, "error");
-            renderTable([]);
+            // zostaw poprzednio wyświetlone dane; nie nadpisuj statusu użytkownika
         }
     }
 
@@ -546,7 +602,8 @@
         });
     }
 
-    hideInfoForm();
+    resetGenerationUiState({ resetCancelFlags: true });
+    resetServerGenerationState();
     loadVersions();
     loadLatestPdfs();
     wireDownloadButtons();
