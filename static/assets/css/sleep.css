@@ -159,6 +159,16 @@
     justify-content: center;
 }
 
+input[type="text"],
+textarea {
+    color: #000;
+}
+
+input[type="text"]::placeholder,
+textarea::placeholder {
+    color: #000;
+}
+
 .sleep-status-text {
     font-size: 0.9rem;
     opacity: 0.8;

@@ -24,13 +24,19 @@
     const infoFilename = document.getElementById("wano-info-filename");
     const downloadPlBtn = document.getElementById("download-latest-pl");
     const downloadEnBtn = document.getElementById("download-latest-en");
+    const pdfDropzone = document.getElementById("wano-pdf-dropzone");
+    const pdfInput = document.getElementById("wano-pdf-input");
+    const pdfList = document.getElementById("wano-pdf-list");
+    const pdfStatusEl = document.getElementById("wano-pdf-status");
     const allowedExt = ["xlsm", "xlsx"];
+    const allowedPdfExt = ["pdf"];
+    const PDF_ICON_SRC = "/static/images/pdf.png";
 
     let versions = [];
     let latestPdfs = { pl: null, en: null };
-    const GEN_PROGRESS_INTERVAL = 2500; // 2.5 s na 1%
+    const GEN_PROGRESS_INTERVAL = 3000; // 3 s na 1%
     const GEN_PROGRESS_MAX = 99;
-    const GEN_TOTAL_MS = 250000; // 4 min 10 s
+    const GEN_TOTAL_MS = 300000; // 5 min
     const STAGE_PRIORITY = { start: 0, export: 1, merge: 2, done: 3, error: 4 };
     const STAGE_TEXT = {
         start: "Przygotowanie pliku...",
@@ -53,6 +59,7 @@
     let cancelInFlight = false;
     let lastProgressPriority = -1;
     let progressStartMarker = 0;
+    let pdfLibrary = [];
 
     function formatDate(d = new Date()) {
         const pad = (v) => String(v).padStart(2, "0");
@@ -101,6 +108,128 @@
 
     function hideProgress(wrapper) {
         if (wrapper) wrapper.hidden = true;
+    }
+
+    function setPdfStatus(message, type = "normal") {
+        if (!pdfStatusEl) return;
+        pdfStatusEl.textContent = message || "";
+        pdfStatusEl.classList.toggle("error", type === "error");
+    }
+
+    function chunkIntoColumns(items, columns = 3) {
+        const normalized = Array.from({ length: columns }, () => []);
+        items.forEach((item, index) => {
+            normalized[index % columns].push(item);
+        });
+        return normalized;
+    }
+
+    function renderPdfLibrary(files = []) {
+        if (!pdfList) return;
+        if (!files.length) {
+            pdfList.innerHTML = `
+                <div class="wano-pdf-column">
+                    <span class="wano-drop-sub">Brak plików PDF w katalogu.</span>
+                </div>
+            `;
+            return;
+        }
+
+        const columns = chunkIntoColumns(files, 3);
+        pdfList.innerHTML = columns
+            .map(
+                (column, columnIndex) => `
+                <div class="wano-pdf-column" data-column="${columnIndex + 1}">
+                    ${
+                        column.length
+                            ? column
+                                  .map(
+                                      (entry) => `
+                            <div class="wano-pdf-item">
+                                <img src="${PDF_ICON_SRC}" alt="PDF" loading="lazy" />
+                                <a href="${entry.href}" download="${entry.file}">${entry.file}</a>
+                            </div>
+                        `
+                                  )
+                                  .join("")
+                            : `<span class="wano-drop-sub">Brak plików</span>`
+                    }
+                </div>
+            `
+            )
+            .join("");
+    }
+
+    async function loadPdfLibrary() {
+        if (!pdfList) return;
+        try {
+            const response = await fetch("/api/wano/pdf-library");
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const detail = payload.detail || payload.message || "Nie udało się pobrać listy PDF.";
+                throw new Error(detail);
+            }
+            pdfLibrary = Array.isArray(payload.files) ? payload.files : [];
+            renderPdfLibrary(pdfLibrary);
+        } catch (error) {
+            console.error(error);
+            setPdfStatus(
+                error instanceof Error ? `❌ ${error.message}` : "❌ Nie udało się pobrać listy PDF.",
+                "error"
+            );
+        }
+    }
+
+    function validatePdfReplacement(file) {
+        const ext = file.name.split(".").pop()?.toLowerCase();
+        if (!ext || !allowedPdfExt.includes(ext)) {
+            throw new Error("Dozwolone są tylko pliki .pdf.");
+        }
+    }
+
+    function togglePdfDropzoneDisabled(state) {
+        if (!pdfDropzone) return;
+        pdfDropzone.classList.toggle("disabled", Boolean(state));
+    }
+
+    async function replacePdfFile(file) {
+        togglePdfDropzoneDisabled(true);
+        setPdfStatus(`Podmieniam plik "${file.name}"...`);
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const response = await fetch("/api/wano/pdf-library/replace", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const detail = payload.detail || payload.message || "Nie udało się podmienić pliku.";
+                throw new Error(detail);
+            }
+            const replacedName = payload.file || file.name;
+            setPdfStatus(`✅ Podmieniono: ${replacedName}.`);
+            await loadPdfLibrary();
+        } catch (error) {
+            console.error(error);
+            const message = error instanceof Error ? error.message : "Wystąpił błąd.";
+            setPdfStatus(`❌ ${message}`, "error");
+        } finally {
+            togglePdfDropzoneDisabled(false);
+            if (pdfInput) pdfInput.value = "";
+        }
+    }
+
+    function handlePdfReplacement(file) {
+        if (!file) return;
+        try {
+            validatePdfReplacement(file);
+            replacePdfFile(file);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Wystąpił błąd.";
+            setPdfStatus(`❌ ${message}`, "error");
+        }
     }
 
     function startGenProgress() {
@@ -534,6 +663,28 @@
         handleFileSelect(file);
     });
 
+    pdfDropzone?.addEventListener("click", () => pdfInput?.click());
+
+    pdfDropzone?.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        pdfDropzone.classList.add("dragover");
+    });
+
+    pdfDropzone?.addEventListener("dragleave", () => pdfDropzone.classList.remove("dragover"));
+
+    pdfDropzone?.addEventListener("drop", (event) => {
+        event.preventDefault();
+        pdfDropzone.classList.remove("dragover");
+        const file = event.dataTransfer?.files?.[0];
+        handlePdfReplacement(file);
+    });
+
+    pdfInput?.addEventListener("change", () => {
+        const file = pdfInput.files?.[0];
+        if (!file) return;
+        handlePdfReplacement(file);
+    });
+
     infoSubmit?.addEventListener("click", (event) => {
         event.preventDefault();
         submitInfo();
@@ -606,5 +757,6 @@
     resetServerGenerationState();
     loadVersions();
     loadLatestPdfs();
+    loadPdfLibrary();
     wireDownloadButtons();
 })();

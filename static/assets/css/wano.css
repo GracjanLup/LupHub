@@ -171,6 +171,32 @@
     border: 0;
 }
 
+.wano-tutorials {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wano-tutorials-head {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    text-align: center;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin-bottom: 0.75rem;
+}
+
+.wano-tutorials-videos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.2rem;
+}
+
+.wano-tutorials-videos .wano-video-frame {
+    margin: 0;
+}
+
 .wano-progress {
     margin: 0 0 1.4rem;
     display: flex;
@@ -276,6 +302,71 @@
 .wano-dropzone.dragover {
     border-color: #7fb8ff;
     background: rgba(127, 184, 255, 0.07);
+}
+
+.wano-pdf-manager {
+    margin: 2rem 0;
+}
+
+.wano-pdf-list {
+    margin-top: 1rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 14px;
+    padding: 1.2rem;
+    background: rgba(255, 255, 255, 0.75);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.wano-pdf-status {
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+    color: #003478;
+    font-weight: 600;
+}
+
+.wano-pdf-status.error {
+    color: #a00606;
+}
+
+.wano-pdf-column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.wano-pdf-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.4rem;
+    border-radius: 8px;
+    transition: background 0.15s ease;
+    text-align: center;
+}
+
+.wano-pdf-item:hover {
+    background: rgba(76, 159, 255, 0.15);
+}
+
+.wano-pdf-item img {
+    width: 22px;
+    height: 22px;
+}
+
+.wano-pdf-item a {
+    color: #0a2b5e;
+    font-weight: 600;
+    text-decoration: none;
+    flex: 0;
+}
+
+.wano-pdf-item a:hover {
+    text-decoration: underline;
 }
 
 .wano-drop-title {

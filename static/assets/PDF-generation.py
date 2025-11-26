@@ -5,9 +5,19 @@ import shutil
 import subprocess
 import tempfile
 import threading
+from io import BytesIO
 from typing import Callable, Iterable, List, Optional
 
-from PyPDF2 import PdfMerger
+from PyPDF2 import PdfMerger, PdfReader, PdfWriter
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except ImportError:  # pragma: no cover - środowisko bez reportlab
+    canvas = None
+    pdfmetrics = None
+    TTFont = None
 
 try:
     from openpyxl import load_workbook
@@ -24,6 +34,23 @@ OUTPUT_DIR_PL = os.environ.get("WANO_OUTPUT_PL_DIR") or os.path.join(BASE_DIR, "
 OUTPUT_DIR_EN = os.environ.get("WANO_OUTPUT_EN_DIR") or os.path.join(BASE_DIR, "cennikiPDF-EN")
 OUTPUT_FILE_PL = os.path.join(OUTPUT_DIR_PL, "Cennik B2B WANO.pdf")
 OUTPUT_FILE_EN = os.path.join(OUTPUT_DIR_EN, "Price List B2B WANO.pdf")
+FOOTER_LEFT_TEXT = "          tel. +48 61 307 22 35"
+FOOTER_RIGHT_TEXT = "biuro@wano.pl          "
+FOOTER_FONT = "Arial"
+FOOTER_FALLBACK_FONT = "Helvetica"
+FOOTER_FONT_SIZE = 8
+FOOTER_MARGIN_X = 60
+FOOTER_MARGIN_Y = 40
+# Indeksy stron do pominięcia (0-based)
+FOOTER_START_PAGE_INDEX = 4  # zaczynamy od 5. strony
+FOOTER_SKIP_LAST = 1
+FOOTER_PREFERRED_FONT_PATHS = [
+    "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/arial.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/ArialMT.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/ArialUnicode.ttf",
+]
+_FOOTER_FONT_IN_USE: Optional[str] = None
 
 
 class GenerationError(Exception):
@@ -68,6 +95,78 @@ def _merge_pdf_list(paths: Iterable[str], output_file: str, cancel_event: Option
         raise GenerationError(f"Błąd scalania PDF: {exc}") from exc
     finally:
         merger.close()
+
+
+def _require_reportlab():
+    if canvas is None:
+        raise GenerationError(
+            "Brak biblioteki reportlab. Zainstaluj ją w środowisku (pip install reportlab), aby dodać stopkę."
+        )
+
+
+def _get_footer_font_name() -> str:
+    global _FOOTER_FONT_IN_USE
+    _require_reportlab()
+    if _FOOTER_FONT_IN_USE:
+        return _FOOTER_FONT_IN_USE
+
+    font_name = FOOTER_FONT
+    for path in FOOTER_PREFERRED_FONT_PATHS:
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont(font_name, path))
+                _FOOTER_FONT_IN_USE = font_name
+                return _FOOTER_FONT_IN_USE
+            except Exception:
+                continue
+
+    _FOOTER_FONT_IN_USE = FOOTER_FALLBACK_FONT
+    return _FOOTER_FONT_IN_USE
+
+
+def _create_footer_overlay(page_width: float, page_height: float, page_number: int) -> BytesIO:
+    font_name = _get_footer_font_name()
+    overlay = BytesIO()
+    c = canvas.Canvas(overlay, pagesize=(page_width, page_height))
+    c.setFont(font_name, FOOTER_FONT_SIZE)
+    baseline = FOOTER_MARGIN_Y
+    c.drawString(FOOTER_MARGIN_X + 10, baseline, FOOTER_LEFT_TEXT)
+    c.drawCentredString(page_width / 2, baseline, str(page_number))
+    c.drawRightString(page_width - FOOTER_MARGIN_X - 10, baseline, FOOTER_RIGHT_TEXT)
+    c.save()
+    overlay.seek(0)
+    return overlay
+
+
+def _apply_footer_to_pdf(pdf_path: str, cancel_event: Optional[threading.Event] = None):
+    _require_reportlab()
+    _check_cancel(cancel_event)
+    if not os.path.exists(pdf_path):
+        raise GenerationError(f"Nie znaleziono pliku PDF do oznaczenia stopką: {pdf_path}")
+
+    reader = PdfReader(pdf_path)
+    total_pages = len(reader.pages)
+    if total_pages <= FOOTER_START_PAGE_INDEX + FOOTER_SKIP_LAST:
+        return  # zbyt mały dokument, nie ma czego oznaczać
+
+    writer = PdfWriter()
+    for idx, page in enumerate(reader.pages):
+        _check_cancel(cancel_event)
+        page_number = idx + 1
+        if idx >= FOOTER_START_PAGE_INDEX and idx < total_pages - FOOTER_SKIP_LAST:
+            overlay_stream = _create_footer_overlay(float(page.mediabox.width), float(page.mediabox.height), page_number)
+            overlay_pdf = PdfReader(overlay_stream)
+            page.merge_page(overlay_pdf.pages[0])
+        writer.add_page(page)
+
+    temp_fd, temp_path = tempfile.mkstemp(prefix="wano-footer-", suffix=".pdf")
+    try:
+        with os.fdopen(temp_fd, "wb") as temp_file:
+            writer.write(temp_file)
+        shutil.move(temp_path, pdf_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def _find_soffice_binary() -> str:
@@ -416,6 +515,9 @@ def generate_price_list(
     target_dir = OUTPUT_DIR_PL if language == "pl" else OUTPUT_DIR_EN
     os.makedirs(target_dir, exist_ok=True)
     result = _merge_pdf_list(parts, output_file, cancel_event=cancel_event)
+    if progress_cb:
+        progress_cb("merge", 96, "Dodawanie stopki")
+    _apply_footer_to_pdf(result, cancel_event=cancel_event)
     if register_cleanup:
         register_cleanup(result)
     if progress_cb:

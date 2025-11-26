@@ -10,7 +10,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
         <link rel="stylesheet" href="/static/assets/css/main.css" />
-        <link rel="stylesheet" href="/static/assets/css/wano.css?v=3" />
+        <link rel="stylesheet" href="/static/assets/css/wano.css?v=6" />
         <noscript><link rel="stylesheet" href="/static/assets/css/noscript.css" /></noscript>
     </head>
     <body class="is-preload">
@@ -93,6 +93,33 @@
                                             <!-- Wypełniane wano.js -->
                                         </div>
                                     </div>
+
+                                    <div class="wano-pdf-manager">
+                                        <div class="wano-dropzone" id="wano-pdf-dropzone">
+                                            <input type="file" id="wano-pdf-input" accept=".pdf" hidden />
+                                            <p class="wano-drop-title">Podmień plik pdf (nie zmieniaj nazwy)</p>
+                                            <p class="wano-drop-sub">Przeciągnij i upuść plik .pdf lub kliknij, aby wybrać istniejący plik do podmiany.</p>
+                                        </div>
+                                        <p class="wano-pdf-status" id="wano-pdf-status"></p>
+                                        <div class="wano-pdf-list" id="wano-pdf-list">
+                                            <!-- Lista PDF ładowana wano.js -->
+                                        </div>
+                                    </div>
+
+                                    <div class="wano-tutorials">
+                                        <div class="wano-tutorials-head">
+                                            <span>Obsługa Generatora (2:58)</span>
+                                            <span>Obsługa Excela (2:18)</span>
+                                        </div>
+                                        <div class="wano-tutorials-videos">
+                                            <div class="wano-video-frame">
+                                                <iframe src="https://www.youtube.com/embed/DMT-yyb1TCY" title="Obsługa Generatora" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                                            </div>
+                                            <div class="wano-video-frame">
+                                                <iframe src="https://www.youtube.com/embed/mPRUWzU5Eng" title="Obsługa Excela" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
 
@@ -117,6 +144,6 @@
             <script src="/static/assets/js/breakpoints.min.js"></script>
             <script src="/static/assets/js/util.js"></script>
             <script src="/static/assets/js/main.js"></script>
-            <script src="/static/assets/js/wano.js?v=3"></script>
+            <script src="/static/assets/js/wano.js?v=6"></script>
     </body>
 </html>

@@ -95,6 +95,34 @@ def _save_meta(meta: dict):
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
 
+def _list_pdf_library() -> List[dict]:
+    if not os.path.exists(WANO_PDFY_DIR):
+        return []
+
+    entries: List[dict] = []
+    base_dir = os.path.abspath(WANO_PDFY_DIR)
+    for name in os.listdir(base_dir):
+        if not name.lower().endswith(".pdf"):
+            continue
+        path = os.path.abspath(os.path.join(base_dir, name))
+        if not path.startswith(base_dir + os.sep):
+            continue
+        if not os.path.isfile(path):
+            continue
+        stat = os.stat(path)
+        entries.append(
+            {
+                "file": name,
+                "href": f"/api/wano/pdf-library/download/{name}",
+                "size": stat.st_size,
+                "date": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            }
+        )
+
+    entries.sort(key=lambda x: x["file"].lower())
+    return entries
+
+
 def _start_generation_job(language: str) -> dict:
     language = language.lower()
     if language not in {"pl", "en"}:
@@ -486,6 +514,52 @@ async def list_wano_files():
 
     files.sort(key=lambda x: x["date"], reverse=True)
     return {"files": files}
+
+
+@app.get("/api/wano/pdf-library")
+async def list_pdf_library():
+    return {"files": _list_pdf_library()}
+
+
+@app.get("/api/wano/pdf-library/download/{filename}")
+async def download_pdf_library_file(filename: str):
+    safe_name = os.path.basename(filename)
+    if not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Dozwolone są tylko pliki PDF.")
+
+    base_dir = os.path.abspath(WANO_PDFY_DIR)
+    file_path = os.path.abspath(os.path.join(base_dir, safe_name))
+    if not file_path.startswith(base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Plik nie istnieje.")
+
+    return FileResponse(file_path, filename=safe_name)
+
+
+@app.post("/api/wano/pdf-library/replace")
+async def replace_pdf_library_file(file: UploadFile = File(...)):
+    filename = file.filename or ""
+    safe_name = os.path.basename(filename)
+    if not safe_name.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Wgraj plik z rozszerzeniem .pdf.")
+
+    base_dir = os.path.abspath(WANO_PDFY_DIR)
+    file_path = os.path.abspath(os.path.join(base_dir, safe_name))
+    if not file_path.startswith(base_dir + os.sep):
+        raise HTTPException(status_code=400, detail="Nieprawidłowa nazwa pliku.")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=400, detail="Plik o tej nazwie nie istnieje na serwerze.")
+
+    try:
+        contents = await file.read()
+        with open(file_path, "wb") as out_file:
+            out_file.write(contents)
+    except Exception as exc:  # pragma: no cover - zapis pliku
+        logging.error("Błąd podmiany PDF: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Nie udało się zapisać pliku.")
+
+    return {"message": "Plik podmieniony", "file": safe_name}
 
 
 def _latest_pdf(lang: str) -> Optional[dict]:
